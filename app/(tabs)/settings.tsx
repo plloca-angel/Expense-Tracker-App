@@ -17,7 +17,7 @@ import * as Sharing from 'expo-sharing';
 import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import type { BackupPayload } from '../../src/lib/backup';
-import { parseBackupJson } from '../../src/lib/backup';
+import { formatBackupImportPreview, parseBackupJson, summarizeBackupPayload } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
 import type { ThemePreference } from '../../src/types/settings';
 
@@ -117,14 +117,11 @@ export default function SettingsScreen() {
     try {
       const raw = await FileSystem.readAsStringAsync(uri, { encoding: 'utf8' });
       const data = parseBackupJson(raw);
-      Alert.alert(
-        'Replace all data?',
-        'This overwrites expenses, income, budgets, goals, categories, and settings. This cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
-        ]
-      );
+      const preview = formatBackupImportPreview(summarizeBackupPayload(data));
+      Alert.alert('Replace all data?', preview, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
+      ]);
     } catch (e) {
       Alert.alert('Invalid backup', e instanceof Error ? e.message : 'Could not parse JSON.');
     }
