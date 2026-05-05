@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -236,6 +237,7 @@ export default function BudgetsScreen() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
         }

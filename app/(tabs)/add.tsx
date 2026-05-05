@@ -12,13 +12,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
 import { parseAmount, todayISODate } from '../../src/lib/money';
 
 type EntryKind = 'expense' | 'income';
 
 export default function AddScreen() {
+  const insets = useSafeAreaInsets();
   const { colors, accounts, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
   const [entryKind, setEntryKind] = useState<EntryKind>('expense');
   const [amount, setAmount] = useState('');
@@ -75,9 +76,14 @@ export default function AddScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}
+      >
         <ScrollView
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >

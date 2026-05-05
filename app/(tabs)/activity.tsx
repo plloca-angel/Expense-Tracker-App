@@ -246,6 +246,8 @@ export default function ActivityScreen() {
           placeholderTextColor={colors.textMuted}
           value={search}
           onChangeText={setSearch}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
         />
         {paramCategory || paramAccount ? (
           <View style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}>
@@ -273,14 +275,26 @@ export default function ActivityScreen() {
         maxToRenderPerBatch={12}
         windowSize={7}
         removeClippedSubviews={Platform.OS === 'android'}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
         }
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textMuted }]}>
-            No entries match your filters.
-          </Text>
+          <View style={styles.emptyWrap}>
+            <Text style={[styles.empty, { color: colors.textMuted }]}>
+              No entries match your filters. Try widening the time range or clearing search.
+            </Text>
+            <Pressable
+              onPress={() => router.push('/(tabs)/add')}
+              style={[styles.emptyCta, { backgroundColor: colors.accent }]}
+              accessibilityRole="button"
+              accessibilityLabel="Add a new transaction"
+            >
+              <Text style={styles.emptyCtaText}>Add transaction</Text>
+            </Pressable>
+          </View>
         }
       />
     </SafeAreaView>
@@ -309,7 +323,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   list: { padding: 16, paddingBottom: 28, flexGrow: 1 },
-  empty: { textAlign: 'center', marginTop: 48, fontSize: 15, paddingHorizontal: 24 },
+  emptyWrap: { paddingTop: 32, paddingHorizontal: 16, alignItems: 'center' },
+  empty: { textAlign: 'center', fontSize: 15, lineHeight: 22, marginBottom: 16 },
+  emptyCta: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12 },
+  emptyCtaText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',

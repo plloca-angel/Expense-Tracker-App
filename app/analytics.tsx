@@ -3,6 +3,7 @@ import { BarChart } from 'react-native-gifted-charts';
 import { useMemo, useState } from 'react';
 import {
   Dimensions,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -65,7 +66,12 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.monthNav}>
           <Pressable
             onPress={() => setYm((y) => shiftYm(y, -1))}

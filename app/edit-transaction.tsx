@@ -13,11 +13,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../src/context/FinanceContext';
 import { parseAmount, todayISODate } from '../src/lib/money';
 
 export default function EditTransactionScreen() {
+  const headerHeight = useHeaderHeight();
   const { id: idStr, kind: kindStr } = useLocalSearchParams<{ id: string; kind: string }>();
   const id = Number(idStr);
   const kind = kindStr === 'income' ? 'income' : 'expense';
@@ -116,8 +118,16 @@ export default function EditTransactionScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={headerHeight}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
+          contentContainerStyle={styles.scroll}
+        >
           <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}

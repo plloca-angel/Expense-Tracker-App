@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -34,6 +35,7 @@ const screenW = Dimensions.get('window').width;
 
 export default function OverviewScreen() {
   const { ready, colors, settings, expenses, incomes, budgets, goals, refresh } = useFinance();
+  const isEmpty = expenses.length === 0 && incomes.length === 0;
   const [period, setPeriod] = useState<PeriodFilter>('month');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -98,10 +100,40 @@ export default function OverviewScreen() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
         }
       >
+        {isEmpty ? (
+          <View style={[styles.emptyHero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Start tracking</Text>
+            <Text style={[styles.emptyBody, { color: colors.textSecondary }]}>
+              Add your first expense or income on the Add tab. Open Analytics for calendar views and trends once you
+              have data.
+            </Text>
+            <View style={styles.emptyActions}>
+              <Pressable
+                onPress={() => router.push('/(tabs)/add')}
+                style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
+                accessibilityRole="button"
+                accessibilityLabel="Go to add transaction"
+              >
+                <Text style={styles.emptyBtnText}>Add transaction</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/analytics')}
+                style={[styles.emptyBtnOutline, { borderColor: colors.accent }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open analytics"
+              >
+                <Text style={[styles.emptyBtnOutlineText, { color: colors.accent }]}>Browse analytics</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.periodRow}>
           {(
             [
@@ -115,6 +147,11 @@ export default function OverviewScreen() {
               <Pressable
                 key={key}
                 onPress={() => setPeriod(key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={
+                  key === 'month' ? 'Period: this month' : key === '30d' ? 'Period: last 30 days' : 'Period: all time'
+                }
                 style={[
                   styles.periodChip,
                   { borderColor: colors.border, backgroundColor: colors.card },
@@ -352,10 +389,25 @@ const styles = StyleSheet.create({
   periodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   periodChip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 20,
     borderWidth: 1,
   },
+  emptyHero: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  emptyTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  emptyBody: { fontSize: 15, lineHeight: 22, marginBottom: 16 },
+  emptyActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  emptyBtn: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12 },
+  emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  emptyBtnOutline: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12, borderWidth: 2 },
+  emptyBtnOutlineText: { fontWeight: '700', fontSize: 15 },
   periodChipText: { fontSize: 13 },
   analyticsCta: {
     flexDirection: 'row',
