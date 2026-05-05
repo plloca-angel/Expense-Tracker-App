@@ -1,9 +1,10 @@
 import { BarChart, PieChart } from 'react-native-gifted-charts';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,14 +19,29 @@ import {
   totalIncome,
   totalSpent,
 } from '../../src/lib/aggregates';
+import {
+  averageDailySpend,
+  spendChangeVsPreviousMonth,
+  topCategoryShare,
+} from '../../src/lib/insights';
 import { formatMoney } from '../../src/lib/money';
 import { currentMonthPrefix, expensesInMonth, filterByPeriod, type PeriodFilter } from '../../src/lib/period';
 
 const screenW = Dimensions.get('window').width;
 
 export default function OverviewScreen() {
-  const { ready, colors, settings, expenses, incomes, budgets } = useFinance();
+  const { ready, colors, settings, expenses, incomes, budgets, goals, refresh } = useFinance();
   const [period, setPeriod] = useState<PeriodFilter>('month');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
 
   const fExpenses = useMemo(() => filterByPeriod(expenses, period), [expenses, period]);
   const fIncomes = useMemo(() => filterByPeriod(incomes, period), [incomes, period]);
@@ -61,6 +77,10 @@ export default function OverviewScreen() {
 
   const chartWidth = Math.min(screenW - 40, 360);
 
+  const avgDaily = averageDailySpend(expenses, period);
+  const topShare = topCategoryShare(expenses, period);
+  const vsPrev = period === 'month' ? spendChangeVsPreviousMonth(expenses, ym) : null;
+
   if (!ready) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.bg }]}>
@@ -72,7 +92,13 @@ export default function OverviewScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
+        }
+      >
         <View style={styles.periodRow}>
           {(
             [
@@ -129,6 +155,63 @@ export default function OverviewScreen() {
           </Text>
         </View>
 
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Insights</Text>
+          <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+            Avg spend / day ({period === 'month' ? 'this month' : period === '30d' ? 'last 30 days' : 'all time'}):{' '}
+            <Text style={{ fontWeight: '700', color: colors.text }}>{formatMoney(avgDaily, settings.currency)}</Text>
+          </Text>
+          {topShare ? (
+            <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+              Top category:{' '}
+              <Text style={{ fontWeight: '700', color: colors.text }}>
+                {topShare.category} ({Math.round(topShare.share * 100)}%)
+              </Text>
+            </Text>
+          ) : null}
+          {vsPrev && vsPrev.pctChange !== null ? (
+            <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+              vs {vsPrev.prevYm}:{' '}
+              <Text
+                style={{
+                  fontWeight: '700',
+                  color: vsPrev.pctChange > 0 ? colors.expense : vsPrev.pctChange < 0 ? colors.income : colors.text,
+                }}
+              >
+                {vsPrev.pctChange > 0 ? '+' : ''}
+                {vsPrev.pctChange.toFixed(0)}% spending
+              </Text>
+            </Text>
+          ) : vsPrev && period === 'month' ? (
+            <Text style={[styles.insightLine, { color: colors.textMuted }]}>No prior month to compare.</Text>
+          ) : null}
+        </View>
+
+        {goals.length > 0 ? (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Savings goals</Text>
+            {goals.slice(0, 3).map((g) => {
+              const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
+              return (
+                <View key={g.id} style={styles.goalPreview}>
+                  <Text style={[styles.goalName, { color: colors.text }]}>{g.name}</Text>
+                  <View style={[styles.progressTrack, { backgroundColor: colors.bgElevated }]}>
+                    <View
+                      style={[styles.progressFill, { width: `${pct}%`, backgroundColor: colors.income }]}
+                    />
+                  </View>
+                  <Text style={[styles.goalSub, { color: colors.textMuted }]}>
+                    {formatMoney(g.savedAmount, settings.currency)} / {formatMoney(g.targetAmount, settings.currency)}
+                  </Text>
+                </View>
+              );
+            })}
+            {goals.length > 3 ? (
+              <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 6 }}>+{goals.length - 3} more in Budgets</Text>
+            ) : null}
+          </View>
+        ) : null}
+
         {budgetRows.length > 0 ? (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.cardTitle, { color: colors.text }]}>Budgets · {ym}</Text>
@@ -171,6 +254,7 @@ export default function OverviewScreen() {
                 innerCircleColor={colors.pieInner}
                 data={pieData}
                 isAnimated
+                showGradient={false}
                 showText
                 textColor={colors.text}
                 textSize={12}
@@ -193,6 +277,7 @@ export default function OverviewScreen() {
               roundedTop
               roundedBottom
               hideRules
+              showGradient={false}
               xAxisThickness={0}
               yAxisThickness={0}
               yAxisTextStyle={{ color: colors.chartLabel, fontSize: 10 }}
@@ -247,4 +332,8 @@ const styles = StyleSheet.create({
   progressTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 4 },
   overBudget: { fontSize: 12, marginTop: 4, fontWeight: '600' },
+  insightLine: { fontSize: 14, lineHeight: 22, marginBottom: 6 },
+  goalPreview: { marginBottom: 12 },
+  goalName: { fontWeight: '600', marginBottom: 6 },
+  goalSub: { fontSize: 12, marginTop: 4 },
 });
