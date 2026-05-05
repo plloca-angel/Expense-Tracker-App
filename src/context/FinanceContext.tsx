@@ -12,8 +12,11 @@ import { CATEGORIES, INCOME_CATEGORIES } from '../constants';
 import * as database from '../db/database';
 import type { NewExpenseInput } from '../db/database';
 import type { NewIncomeInput } from '../db/database';
+import type { NewGoalInput } from '../db/database';
+import type { BackupPayload } from '../lib/backup';
 import { darkColors, lightColors, type ThemeColors } from '../theme/colors';
 import type { Budget } from '../types/budget';
+import type { SavingsGoal } from '../types/goal';
 import type { Expense } from '../types/expense';
 import type { Income } from '../types/income';
 import type { AppSettings, ThemePreference } from '../types/settings';
@@ -28,6 +31,7 @@ type FinanceContextValue = {
   expenses: Expense[];
   incomes: Income[];
   budgets: Budget[];
+  goals: SavingsGoal[];
   expenseCategoryOptions: string[];
   incomeCategoryOptions: string[];
   refresh: () => Promise<void>;
@@ -39,6 +43,11 @@ type FinanceContextValue = {
   removeBudget: (id: number) => Promise<void>;
   addCustomCategory: (name: string, kind: 'expense' | 'income') => Promise<void>;
   deleteCustomCategory: (name: string, kind: 'expense' | 'income') => Promise<void>;
+  addGoal: (input: NewGoalInput) => Promise<void>;
+  updateGoalSaved: (id: number, savedAmount: number) => Promise<void>;
+  removeGoal: (id: number) => Promise<void>;
+  exportBackup: () => Promise<BackupPayload>;
+  importBackup: (data: BackupPayload) => Promise<void>;
 };
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
@@ -57,6 +66,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [customExpenseCats, setCustomExpenseCats] = useState<string[]>([]);
   const [customIncomeCats, setCustomIncomeCats] = useState<string[]>([]);
@@ -78,10 +88,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!db) return;
-    const [ex, inc, bud, s, ce, ci] = await Promise.all([
+    const [ex, inc, bud, gl, s, ce, ci] = await Promise.all([
       database.fetchAllExpenses(db),
       database.fetchAllIncomes(db),
       database.fetchAllBudgets(db),
+      database.fetchAllGoals(db),
       database.loadAppSettings(db),
       database.fetchCustomCategories(db, 'expense'),
       database.fetchCustomCategories(db, 'income'),
@@ -89,6 +100,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setExpenses(ex);
     setIncomes(inc);
     setBudgets(bud);
+    setGoals(gl);
     setSettingsState(s);
     setCustomExpenseCats(ce);
     setCustomIncomeCats(ci);
@@ -100,10 +112,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       const sqlite = await database.openDb();
       if (cancelled) return;
       setDb(sqlite);
-      const [ex, inc, bud, s, ce, ci] = await Promise.all([
+      const [ex, inc, bud, gl, s, ce, ci] = await Promise.all([
         database.fetchAllExpenses(sqlite),
         database.fetchAllIncomes(sqlite),
         database.fetchAllBudgets(sqlite),
+        database.fetchAllGoals(sqlite),
         database.loadAppSettings(sqlite),
         database.fetchCustomCategories(sqlite, 'expense'),
         database.fetchCustomCategories(sqlite, 'income'),
@@ -112,6 +125,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       setExpenses(ex);
       setIncomes(inc);
       setBudgets(bud);
+      setGoals(gl);
       setSettingsState(s);
       setCustomExpenseCats(ce);
       setCustomIncomeCats(ci);
@@ -206,6 +220,47 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const addGoal = useCallback(
+    async (input: NewGoalInput) => {
+      if (!db) return;
+      await database.insertGoal(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const updateGoalSaved = useCallback(
+    async (id: number, savedAmount: number) => {
+      if (!db) return;
+      await database.updateGoalSavedAmount(db, id, savedAmount);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const removeGoal = useCallback(
+    async (id: number) => {
+      if (!db) return;
+      await database.deleteGoal(db, id);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const exportBackup = useCallback(async () => {
+    if (!db) throw new Error('Database not ready');
+    return database.exportDatabaseSnapshot(db);
+  }, [db]);
+
+  const importBackup = useCallback(
+    async (data: BackupPayload) => {
+      if (!db) return;
+      await database.importDatabaseSnapshot(db, data);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
   const value = useMemo(
     () => ({
       ready,
@@ -216,6 +271,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       expenses,
       incomes,
       budgets,
+      goals,
       expenseCategoryOptions,
       incomeCategoryOptions,
       refresh,
@@ -227,6 +283,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       removeBudget,
       addCustomCategory,
       deleteCustomCategory,
+      addGoal,
+      updateGoalSaved,
+      removeGoal,
+      exportBackup,
+      importBackup,
     }),
     [
       ready,
@@ -237,6 +298,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       expenses,
       incomes,
       budgets,
+      goals,
       expenseCategoryOptions,
       incomeCategoryOptions,
       refresh,
@@ -248,6 +310,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       removeBudget,
       addCustomCategory,
       deleteCustomCategory,
+      addGoal,
+      updateGoalSaved,
+      removeGoal,
+      exportBackup,
+      importBackup,
     ]
   );
 

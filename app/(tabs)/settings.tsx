@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +16,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
+import type { BackupPayload } from '../../src/lib/backup';
+import { parseBackupJson } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
 import type { ThemePreference } from '../../src/types/settings';
 
@@ -30,10 +33,13 @@ export default function SettingsScreen() {
     incomeCategoryOptions,
     addCustomCategory,
     deleteCustomCategory,
+    exportBackup,
+    importBackup,
   } = useFinance();
   const [newExpCat, setNewExpCat] = useState('');
   const [newIncCat, setNewIncCat] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [jsonBusy, setJsonBusy] = useState(false);
 
   const exportCsv = async () => {
     if (!(await Sharing.isAvailableAsync())) {
@@ -55,6 +61,72 @@ export default function SettingsScreen() {
       Alert.alert('Export failed', e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const exportFullJson = async () => {
+    if (!(await Sharing.isAvailableAsync())) {
+      Alert.alert('Export', 'Sharing is not available on this device.');
+      return;
+    }
+    const dir = FileSystem.cacheDirectory;
+    if (!dir) {
+      Alert.alert('Export', 'Cache directory is not available.');
+      return;
+    }
+    setJsonBusy(true);
+    try {
+      const data = await exportBackup();
+      const json = JSON.stringify(data, null, 2);
+      const path = `${dir}expense-tracker-backup.json`;
+      await FileSystem.writeAsStringAsync(path, json, { encoding: 'utf8' });
+      await Sharing.shareAsync(path, {
+        mimeType: 'application/json',
+        dialogTitle: 'Full backup',
+      });
+    } catch (e) {
+      Alert.alert('Export failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setJsonBusy(false);
+    }
+  };
+
+  const runImport = async (data: BackupPayload) => {
+    setJsonBusy(true);
+    try {
+      await importBackup(data);
+      Alert.alert('Restored', 'All data was replaced from the backup.');
+    } catch (e) {
+      Alert.alert('Import failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setJsonBusy(false);
+    }
+  };
+
+  const pickImportJson = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/json',
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled) return;
+    const uri = result.assets[0]?.uri;
+    if (!uri) {
+      Alert.alert('Import', 'Could not read the file.');
+      return;
+    }
+    try {
+      const raw = await FileSystem.readAsStringAsync(uri, { encoding: 'utf8' });
+      const data = parseBackupJson(raw);
+      Alert.alert(
+        'Replace all data?',
+        'This overwrites expenses, income, budgets, goals, categories, and settings. This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Invalid backup', e instanceof Error ? e.message : 'Could not parse JSON.');
     }
   };
 
@@ -145,7 +217,7 @@ export default function SettingsScreen() {
         <Pressable
           style={[styles.exportBtn, { backgroundColor: colors.accent }]}
           onPress={() => void exportCsv()}
-          disabled={exporting}
+          disabled={exporting || jsonBusy}
         >
           {exporting ? (
             <ActivityIndicator color="#fff" />
@@ -156,6 +228,36 @@ export default function SettingsScreen() {
             </>
           )}
         </Pressable>
+
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Full backup (JSON)</Text>
+          <Text style={[styles.backupHint, { color: colors.textMuted }]}>
+            Includes transactions, budgets, savings goals, custom categories, and app settings. Use import on a new
+            device to restore.
+          </Text>
+          <Pressable
+            style={[styles.exportBtn, { backgroundColor: colors.income, marginBottom: 10 }]}
+            onPress={() => void exportFullJson()}
+            disabled={jsonBusy}
+          >
+            {jsonBusy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={22} color="#fff" />
+                <Text style={styles.exportText}>Export full backup</Text>
+              </>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.importBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+            onPress={() => void pickImportJson()}
+            disabled={jsonBusy}
+          >
+            <Ionicons name="cloud-download-outline" size={22} color={colors.accent} />
+            <Text style={[styles.importText, { color: colors.accent }]}>Import backup…</Text>
+          </Pressable>
+        </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Custom expense categories</Text>
@@ -265,6 +367,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   exportText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  backupHint: { fontSize: 14, lineHeight: 20, marginBottom: 14 },
+  importBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 2,
+  },
+  importText: { fontSize: 16, fontWeight: '600' },
   addRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   addInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
   addBtn: { paddingHorizontal: 18, borderRadius: 12, justifyContent: 'center' },

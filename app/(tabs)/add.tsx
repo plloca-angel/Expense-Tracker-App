@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -55,6 +56,11 @@ export default function AddScreen() {
       };
       if (entryKind === 'expense') await addExpense(payload);
       else await addIncome(payload);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {
+        /* haptics optional */
+      }
       setAmount('');
       setTag('');
       setNote('');

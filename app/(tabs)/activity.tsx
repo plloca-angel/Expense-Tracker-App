@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -24,10 +25,20 @@ type Row =
 type FilterKind = 'all' | 'expense' | 'income';
 
 export default function ActivityScreen() {
-  const { ready, colors, settings, expenses, incomes, removeExpense, removeIncome } = useFinance();
+  const { ready, colors, settings, expenses, incomes, removeExpense, removeIncome, refresh } = useFinance();
   const [kind, setKind] = useState<FilterKind>('all');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
 
   const data = useMemo(() => {
     let ex = filterByPeriod(expenses, period);
@@ -148,6 +159,9 @@ export default function ActivityScreen() {
       <FlatList
         data={data}
         keyExtractor={(item) => `${item.kind}-${item.data.id}`}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
+        }
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textMuted }]}>
