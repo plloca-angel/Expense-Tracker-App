@@ -12,119 +12,196 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CATEGORIES } from '../../src/constants';
-import { useExpenses } from '../../src/context/ExpenseContext';
+import { useFinance } from '../../src/context/FinanceContext';
 import { parseAmount, todayISODate } from '../../src/lib/money';
 
-export default function AddExpenseScreen() {
-  const { addExpense } = useExpenses();
+type EntryKind = 'expense' | 'income';
+
+export default function AddScreen() {
+  const { colors, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
+  const [entryKind, setEntryKind] = useState<EntryKind>('expense');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<string>(CATEGORIES[0]);
+  const categories = entryKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
+  const [category, setCategory] = useState(categories[0] ?? 'Other');
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISODate());
   const [saving, setSaving] = useState(false);
 
+  const onKindChange = (k: EntryKind) => {
+    setEntryKind(k);
+    const next = k === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
+    setCategory(next[0] ?? 'Other');
+  };
+
   const onSave = async () => {
     const value = parseAmount(amount);
     if (value === null) {
-      Alert.alert('Check amount', 'Enter a positive number for the expense.');
+      Alert.alert('Check amount', 'Enter a positive number.');
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-      Alert.alert('Check date', 'Use YYYY-MM-DD format for the date.');
+      Alert.alert('Check date', 'Use YYYY-MM-DD format.');
       return;
     }
     setSaving(true);
     try {
-      await addExpense({
+      const payload = {
         amount: value,
         category,
         tag: tag.trim() || null,
         note: note.trim() || null,
         date: date.trim(),
-      });
+      };
+      if (entryKind === 'expense') await addExpense(payload);
+      else await addIncome(payload);
       setAmount('');
       setTag('');
       setNote('');
       setDate(todayISODate());
-      router.replace('/(tabs)/expenses');
+      router.replace('/(tabs)/activity');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.label}>Amount</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+          <View style={styles.kindRow}>
+            <Pressable
+              onPress={() => onKindChange('expense')}
+              style={[
+                styles.kindBtn,
+                { borderColor: colors.border, backgroundColor: colors.card },
+                entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.kindText,
+                  { color: colors.text },
+                  entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
+                ]}
+              >
+                Expense
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onKindChange('income')}
+              style={[
+                styles.kindBtn,
+                { borderColor: colors.border, backgroundColor: colors.card },
+                entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.kindText,
+                  { color: colors.text },
+                  entryKind === 'income' && { color: colors.income, fontWeight: '700' },
+                ]}
+              >
+                Income
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+            ]}
             placeholder="0.00"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={amount}
             onChangeText={setAmount}
           />
 
-          <Text style={styles.label}>Category</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
           <View style={styles.chips}>
-            {CATEGORIES.map((c) => {
+            {categories.map((c) => {
               const active = c === category;
               return (
                 <Pressable
                   key={c}
                   onPress={() => setCategory(c)}
-                  style={[styles.chip, active && styles.chipActive]}
+                  style={[
+                    styles.chip,
+                    { borderColor: colors.border, backgroundColor: colors.card },
+                    active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  ]}
                 >
-                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{c}</Text>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: colors.textSecondary },
+                      active && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {c}
+                  </Text>
                 </Pressable>
               );
             })}
           </View>
 
-          <Text style={styles.label}>Tag (optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+            ]}
             placeholder="e.g. Business, Trip"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={colors.textMuted}
             value={tag}
             onChangeText={setTag}
           />
 
-          <Text style={styles.label}>Date</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Date</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+            ]}
             placeholder="YYYY-MM-DD"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={colors.textMuted}
             value={date}
             onChangeText={setDate}
           />
 
-          <Text style={styles.label}>Note (optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
           <TextInput
-            style={[styles.input, styles.noteInput]}
-            placeholder="What was this for?"
-            placeholderTextColor="#94a3b8"
+            style={[
+              styles.input,
+              styles.noteInput,
+              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+            ]}
+            placeholder="Details"
+            placeholderTextColor={colors.textMuted}
             multiline
             value={note}
             onChangeText={setNote}
           />
 
           <Pressable
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            style={[
+              styles.saveBtn,
+              { backgroundColor: colors.accent },
+              saving && { opacity: 0.7 },
+            ]}
             onPress={() => void onSave()}
             disabled={saving}
           >
-            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save expense'}</Text>
+            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -133,78 +210,24 @@ export default function AddExpenseScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  safe: { flex: 1 },
+  flex: { flex: 1 },
+  scroll: { padding: 20, paddingBottom: 40 },
+  label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 4 },
+  kindRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  kindBtn: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
-  },
-  flex: {
-    flex: 1,
-  },
-  scroll: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#0f172a',
-    marginBottom: 16,
-  },
-  noteInput: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  chipActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
-  },
-  chipText: {
-    fontSize: 14,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  chipTextActive: {
-    color: '#1d4ed8',
-  },
-  saveBtn: {
-    backgroundColor: '#2563eb',
+    paddingVertical: 14,
     borderRadius: 14,
-    paddingVertical: 16,
+    borderWidth: 2,
     alignItems: 'center',
-    marginTop: 8,
   },
-  saveBtnDisabled: {
-    opacity: 0.7,
-  },
-  saveText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  kindText: { fontSize: 16 },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 16 },
+  noteInput: { minHeight: 88, textAlignVertical: 'top' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  chipText: { fontSize: 14 },
+  saveBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
