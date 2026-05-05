@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,11 +28,21 @@ type Row =
 type FilterKind = 'all' | 'expense' | 'income';
 
 export default function ActivityScreen() {
-  const { ready, colors, settings, expenses, incomes, removeExpense, removeIncome, refresh } = useFinance();
+  const { category: paramCategory, accountId: paramAccount } = useLocalSearchParams<{
+    category?: string;
+    accountId?: string;
+  }>();
+  const { ready, colors, settings, expenses, incomes, accounts, removeExpense, removeIncome, refresh } =
+    useFinance();
   const [kind, setKind] = useState<FilterKind>('all');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  const accountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name] as const)),
+    [accounts]
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -45,6 +56,18 @@ export default function ActivityScreen() {
   const data = useMemo(() => {
     let ex = filterByPeriod(expenses, period);
     let inc = filterByPeriod(incomes, period);
+    if (paramCategory) {
+      const c = String(paramCategory);
+      ex = ex.filter((e) => e.category === c);
+      inc = inc.filter((i) => i.category === c);
+    }
+    if (paramAccount) {
+      const aid = Number(paramAccount);
+      if (Number.isFinite(aid)) {
+        ex = ex.filter((e) => e.accountId === aid);
+        inc = inc.filter((i) => i.accountId === aid);
+      }
+    }
     const q = search.trim().toLowerCase();
     if (q) {
       const match = (note: string | null, tag: string | null, cat: string) => {
@@ -64,7 +87,7 @@ export default function ActivityScreen() {
       return b.data.id - a.data.id;
     });
     return rows;
-  }, [expenses, incomes, kind, period, search]);
+  }, [expenses, incomes, kind, period, search, paramCategory, paramAccount]);
 
   const confirmDelete = useCallback(
     (row: Row) => {
@@ -88,6 +111,8 @@ export default function ActivityScreen() {
     ({ item }: ListRenderItemInfo<Row>) => {
       const d = item.data;
       const isExp = item.kind === 'expense';
+      const acc =
+        d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
       return (
         <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.rowIcon}>
@@ -106,21 +131,37 @@ export default function ActivityScreen() {
             <Text style={[styles.meta, { color: colors.textMuted }]}>
               {d.date}
               {d.tag ? ` · ${d.tag}` : ''}
+              {acc ? ` · ${acc}` : ''}
             </Text>
             {d.note ? <Text style={[styles.note, { color: colors.textMuted }]}>{d.note}</Text> : null}
           </View>
-          <Pressable
-            onPress={() => confirmDelete(item)}
-            style={({ pressed }) => [styles.trash, pressed && { opacity: 0.6 }]}
-            accessibilityRole="button"
-            accessibilityLabel={isExp ? `Delete expense, ${d.category}` : `Delete income, ${d.category}`}
-          >
-            <Ionicons name="trash-outline" size={22} color={colors.danger} />
-          </Pressable>
+          <View style={styles.rowActions}>
+            <Pressable
+              onPress={() =>
+                void router.push({
+                  pathname: '/edit-transaction',
+                  params: { id: String(d.id), kind: item.kind },
+                })
+              }
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.kind}, ${d.category}`}
+            >
+              <Ionicons name="pencil-outline" size={22} color={colors.accent} />
+            </Pressable>
+            <Pressable
+              onPress={() => confirmDelete(item)}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={isExp ? `Delete expense, ${d.category}` : `Delete income, ${d.category}`}
+            >
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            </Pressable>
+          </View>
         </View>
       );
     },
-    [colors, settings.currency, confirmDelete]
+    [colors, settings.currency, confirmDelete, accountNameById]
   );
 
   const keyExtractor = useCallback((item: Row) => `${item.kind}-${item.data.id}`, []);
@@ -206,6 +247,23 @@ export default function ActivityScreen() {
           value={search}
           onChangeText={setSearch}
         />
+        {paramCategory || paramAccount ? (
+          <View style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}>
+            <Text style={[styles.filterText, { color: colors.text }]} numberOfLines={2}>
+              {paramCategory ? `Category: ${paramCategory}` : ''}
+              {paramCategory && paramAccount ? ' · ' : ''}
+              {paramAccount
+                ? `Account: ${accountNameById.get(Number(paramAccount)) ?? paramAccount}`
+                : ''}
+            </Text>
+            <Pressable
+              onPress={() => router.replace('/(tabs)/activity')}
+              style={({ pressed }) => [styles.clearFilter, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={{ color: colors.accent, fontWeight: '700' }}>Clear</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       <FlatList
         data={data}
@@ -266,5 +324,17 @@ const styles = StyleSheet.create({
   category: { marginTop: 4, fontSize: 15, fontWeight: '600' },
   meta: { marginTop: 4, fontSize: 13 },
   note: { marginTop: 6, fontSize: 14 },
-  trash: { padding: 8 },
+  rowActions: { flexDirection: 'row', alignItems: 'flex-start' },
+  iconBtn: { padding: 8 },
+  filterBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  filterText: { flex: 1, fontSize: 14 },
+  clearFilter: { paddingVertical: 4, paddingHorizontal: 8 },
 });

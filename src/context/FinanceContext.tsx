@@ -13,10 +13,12 @@ import * as database from '../db/database';
 import type { NewExpenseInput, NewIncomeInput, NewGoalInput } from '../db/database';
 import type { BackupPayload } from '../lib/backup';
 import { darkColors, lightColors, type ThemeColors } from '../theme/colors';
+import type { Account } from '../types/account';
 import type { Budget } from '../types/budget';
 import type { SavingsGoal } from '../types/goal';
 import type { Expense } from '../types/expense';
 import type { Income } from '../types/income';
+import type { RecurringItem } from '../types/recurring';
 import type { AppSettings, ThemePreference } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 
@@ -30,12 +32,18 @@ type FinanceContextValue = {
   incomes: Income[];
   budgets: Budget[];
   goals: SavingsGoal[];
+  accounts: Account[];
+  recurringItems: RecurringItem[];
   expenseCategoryOptions: string[];
   incomeCategoryOptions: string[];
+  needsOnboarding: boolean;
+  dismissOnboarding: () => Promise<void>;
   refresh: () => Promise<void>;
   addExpense: (input: NewExpenseInput) => Promise<void>;
+  updateExpense: (id: number, input: NewExpenseInput) => Promise<void>;
   removeExpense: (id: number) => Promise<void>;
   addIncome: (input: NewIncomeInput) => Promise<void>;
+  updateIncome: (id: number, input: NewIncomeInput) => Promise<void>;
   removeIncome: (id: number) => Promise<void>;
   upsertBudget: (category: string, monthlyLimit: number) => Promise<void>;
   removeBudget: (id: number) => Promise<void>;
@@ -44,6 +52,11 @@ type FinanceContextValue = {
   addGoal: (input: NewGoalInput) => Promise<void>;
   updateGoalSaved: (id: number, savedAmount: number) => Promise<void>;
   removeGoal: (id: number) => Promise<void>;
+  addAccount: (name: string, kind: string) => Promise<void>;
+  deleteAccount: (id: number) => Promise<void>;
+  addRecurring: (input: database.NewRecurringInput) => Promise<void>;
+  removeRecurring: (id: number) => Promise<void>;
+  postRecurringForMonth: (ym: string) => Promise<number>;
   exportBackup: () => Promise<BackupPayload>;
   importBackup: (data: BackupPayload) => Promise<void>;
 };
@@ -68,6 +81,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [customExpenseCats, setCustomExpenseCats] = useState<string[]>([]);
   const [customIncomeCats, setCustomIncomeCats] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const resolvedTheme: 'light' | 'dark' =
     settings.theme === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : settings.theme;
@@ -86,7 +102,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!db) return;
-    const [ex, inc, bud, gl, s, ce, ci] = await Promise.all([
+    const [ex, inc, bud, gl, s, ce, ci, acc, rec] = await Promise.all([
       database.fetchAllExpenses(db),
       database.fetchAllIncomes(db),
       database.fetchAllBudgets(db),
@@ -94,6 +110,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       database.loadAppSettings(db),
       database.fetchCustomCategories(db, 'expense'),
       database.fetchCustomCategories(db, 'income'),
+      database.fetchAllAccounts(db),
+      database.fetchAllRecurring(db),
     ]);
     setExpenses(ex);
     setIncomes(inc);
@@ -102,6 +120,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setSettingsState(s);
     setCustomExpenseCats(ce);
     setCustomIncomeCats(ci);
+    setAccounts(acc);
+    setRecurringItems(rec);
   }, [db]);
 
   useEffect(() => {
@@ -110,7 +130,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       const sqlite = await database.openDb();
       if (cancelled) return;
       setDb(sqlite);
-      const [ex, inc, bud, gl, s, ce, ci] = await Promise.all([
+      const [ex, inc, bud, gl, s, ce, ci, acc, rec, seen] = await Promise.all([
         database.fetchAllExpenses(sqlite),
         database.fetchAllIncomes(sqlite),
         database.fetchAllBudgets(sqlite),
@@ -118,6 +138,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         database.loadAppSettings(sqlite),
         database.fetchCustomCategories(sqlite, 'expense'),
         database.fetchCustomCategories(sqlite, 'income'),
+        database.fetchAllAccounts(sqlite),
+        database.fetchAllRecurring(sqlite),
+        database.getOnboardingSeen(sqlite),
       ]);
       if (cancelled) return;
       setExpenses(ex);
@@ -127,6 +150,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       setSettingsState(s);
       setCustomExpenseCats(ce);
       setCustomIncomeCats(ci);
+      setAccounts(acc);
+      setRecurringItems(rec);
+      setNeedsOnboarding(!seen);
       setReady(true);
     })();
     return () => {
@@ -146,10 +172,25 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db]
   );
 
+  const dismissOnboarding = useCallback(async () => {
+    if (!db) return;
+    await database.setOnboardingSeen(db);
+    setNeedsOnboarding(false);
+  }, [db]);
+
   const addExpense = useCallback(
     async (input: NewExpenseInput) => {
       if (!db) return;
       await database.insertExpense(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const updateExpense = useCallback(
+    async (id: number, input: NewExpenseInput) => {
+      if (!db) return;
+      await database.updateExpense(db, id, input);
       await refresh();
     },
     [db, refresh]
@@ -168,6 +209,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     async (input: NewIncomeInput) => {
       if (!db) return;
       await database.insertIncome(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const updateIncome = useCallback(
+    async (id: number, input: NewIncomeInput) => {
+      if (!db) return;
+      await database.updateIncome(db, id, input);
       await refresh();
     },
     [db, refresh]
@@ -245,6 +295,52 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const addAccount = useCallback(
+    async (name: string, kind: string) => {
+      if (!db) return;
+      await database.insertAccount(db, name, kind);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const deleteAccount = useCallback(
+    async (id: number) => {
+      if (!db) return;
+      await database.deleteAccount(db, id);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const addRecurring = useCallback(
+    async (input: database.NewRecurringInput) => {
+      if (!db) return;
+      await database.insertRecurring(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const removeRecurring = useCallback(
+    async (id: number) => {
+      if (!db) return;
+      await database.deleteRecurring(db, id);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const postRecurringForMonth = useCallback(
+    async (ym: string) => {
+      if (!db) return 0;
+      const n = await database.postRecurringForMonth(db, ym);
+      await refresh();
+      return n;
+    },
+    [db, refresh]
+  );
+
   const exportBackup = useCallback(async () => {
     if (!db) throw new Error('Database not ready');
     return database.exportDatabaseSnapshot(db);
@@ -270,12 +366,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       incomes,
       budgets,
       goals,
+      accounts,
+      recurringItems,
       expenseCategoryOptions,
       incomeCategoryOptions,
+      needsOnboarding,
+      dismissOnboarding,
       refresh,
       addExpense,
+      updateExpense,
       removeExpense,
       addIncome,
+      updateIncome,
       removeIncome,
       upsertBudget,
       removeBudget,
@@ -284,6 +386,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       addGoal,
       updateGoalSaved,
       removeGoal,
+      addAccount,
+      deleteAccount,
+      addRecurring,
+      removeRecurring,
+      postRecurringForMonth,
       exportBackup,
       importBackup,
     }),
@@ -297,12 +404,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       incomes,
       budgets,
       goals,
+      accounts,
+      recurringItems,
       expenseCategoryOptions,
       incomeCategoryOptions,
+      needsOnboarding,
+      dismissOnboarding,
       refresh,
       addExpense,
+      updateExpense,
       removeExpense,
       addIncome,
+      updateIncome,
       removeIncome,
       upsertBudget,
       removeBudget,
@@ -311,6 +424,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       addGoal,
       updateGoalSaved,
       removeGoal,
+      addAccount,
+      deleteAccount,
+      addRecurring,
+      removeRecurring,
+      postRecurringForMonth,
       exportBackup,
       importBackup,
     ]

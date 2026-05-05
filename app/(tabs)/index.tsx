@@ -1,3 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -132,7 +135,31 @@ export default function OverviewScreen() {
           })}
         </View>
 
-        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Pressable
+          onPress={() => router.push('/analytics')}
+          style={[
+            styles.analyticsCta,
+            { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open analytics and calendar"
+        >
+          <Ionicons name="stats-chart-outline" size={22} color={colors.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.analyticsTitle, { color: colors.text }]}>Analytics & calendar</Text>
+            <Text style={[styles.analyticsSub, { color: colors.textSecondary }]}>
+              Month heatmap, trends, category drill-down
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </Pressable>
+
+        <LinearGradient
+          colors={[colors.card, colors.bgElevated]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.hero, { borderColor: colors.border }]}
+        >
           <View style={styles.heroGrid}>
             <View style={styles.heroCell}>
               <Text style={[styles.heroLabel, { color: colors.textMuted }]}>Expenses</Text>
@@ -153,7 +180,7 @@ export default function OverviewScreen() {
             {fExpenses.length} expense{fExpenses.length === 1 ? '' : 's'} · {fIncomes.length} income
             {fIncomes.length === 1 ? '' : 's'}
           </Text>
-        </View>
+        </LinearGradient>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Insights</Text>
@@ -261,6 +288,31 @@ export default function OverviewScreen() {
               />
             </View>
           )}
+          {catTotals.length > 0 ? (
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.breakdownTitle, { color: colors.textSecondary }]}>Tap to filter activity</Text>
+              {catTotals.slice(0, 6).map((item, idx) => (
+                <Pressable
+                  key={item.category}
+                  onPress={() =>
+                    router.push(`/(tabs)/activity?category=${encodeURIComponent(item.category)}`)
+                  }
+                  style={[styles.breakdownRow, { borderColor: colors.border }]}
+                >
+                  <View
+                    style={[
+                      styles.breakdownDot,
+                      { backgroundColor: CATEGORY_CHART_COLORS[idx % CATEGORY_CHART_COLORS.length] },
+                    ]}
+                  />
+                  <Text style={[styles.breakdownCat, { color: colors.text }]}>{item.category}</Text>
+                  <Text style={[styles.breakdownAmt, { color: colors.textSecondary }]}>
+                    {formatMoney(item.total, settings.currency)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -305,6 +357,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   periodChipText: { fontSize: 13 },
+  analyticsCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  analyticsTitle: { fontSize: 16, fontWeight: '700' },
+  analyticsSub: { fontSize: 13, marginTop: 2 },
   hero: { borderRadius: 16, padding: 22, marginBottom: 16, borderWidth: 1 },
   heroGrid: { flexDirection: 'row', gap: 16 },
   heroCell: { flex: 1 },
@@ -336,4 +399,15 @@ const styles = StyleSheet.create({
   goalPreview: { marginBottom: 12 },
   goalName: { fontWeight: '600', marginBottom: 6 },
   goalSub: { fontSize: 12, marginTop: 4 },
+  breakdownTitle: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  breakdownDot: { width: 10, height: 10, borderRadius: 5 },
+  breakdownCat: { flex: 1, fontSize: 15, fontWeight: '600' },
+  breakdownAmt: { fontSize: 15, fontWeight: '700' },
 });
