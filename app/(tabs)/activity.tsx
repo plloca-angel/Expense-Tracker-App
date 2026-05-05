@@ -4,12 +4,14 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
@@ -82,6 +84,47 @@ export default function ActivityScreen() {
     [removeExpense, removeIncome, settings.currency]
   );
 
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Row>) => {
+      const d = item.data;
+      const isExp = item.kind === 'expense';
+      return (
+        <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.rowIcon}>
+            <Ionicons
+              name={isExp ? 'arrow-down-circle' : 'arrow-up-circle'}
+              size={28}
+              color={isExp ? colors.expense : colors.income}
+            />
+          </View>
+          <View style={styles.rowMain}>
+            <Text style={[styles.amount, { color: colors.text }]}>
+              {isExp ? '−' : '+'}
+              {formatMoney(d.amount, settings.currency)}
+            </Text>
+            <Text style={[styles.category, { color: colors.textSecondary }]}>{d.category}</Text>
+            <Text style={[styles.meta, { color: colors.textMuted }]}>
+              {d.date}
+              {d.tag ? ` · ${d.tag}` : ''}
+            </Text>
+            {d.note ? <Text style={[styles.note, { color: colors.textMuted }]}>{d.note}</Text> : null}
+          </View>
+          <Pressable
+            onPress={() => confirmDelete(item)}
+            style={({ pressed }) => [styles.trash, pressed && { opacity: 0.6 }]}
+            accessibilityRole="button"
+            accessibilityLabel={isExp ? `Delete expense, ${d.category}` : `Delete income, ${d.category}`}
+          >
+            <Ionicons name="trash-outline" size={22} color={colors.danger} />
+          </Pressable>
+        </View>
+      );
+    },
+    [colors, settings.currency, confirmDelete]
+  );
+
+  const keyExtractor = useCallback((item: Row) => `${item.kind}-${item.data.id}`, []);
+
   if (!ready) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.bg }]}>
@@ -98,6 +141,9 @@ export default function ActivityScreen() {
             <Pressable
               key={k}
               onPress={() => setKind(k)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: kind === k }}
+              accessibilityLabel={k === 'all' ? 'Show all transactions' : k === 'expense' ? 'Show expenses only' : 'Show income only'}
               style={[
                 styles.segBtn,
                 { borderColor: colors.border },
@@ -127,6 +173,11 @@ export default function ActivityScreen() {
             <Pressable
               key={k}
               onPress={() => setPeriod(k)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: period === k }}
+              accessibilityLabel={
+                k === 'all' ? 'Time range: all time' : k === 'month' ? 'Time range: this month' : 'Time range: last 30 days'
+              }
               style={[
                 styles.segBtn,
                 { borderColor: colors.border },
@@ -158,7 +209,12 @@ export default function ActivityScreen() {
       </View>
       <FlatList
         data={data}
-        keyExtractor={(item) => `${item.kind}-${item.data.id}`}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        initialNumToRender={14}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
         }
@@ -168,39 +224,6 @@ export default function ActivityScreen() {
             No entries match your filters.
           </Text>
         }
-        renderItem={({ item }) => {
-          const d = item.data;
-          const isExp = item.kind === 'expense';
-          return (
-            <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.rowIcon}>
-                <Ionicons
-                  name={isExp ? 'arrow-down-circle' : 'arrow-up-circle'}
-                  size={28}
-                  color={isExp ? colors.expense : colors.income}
-                />
-              </View>
-              <View style={styles.rowMain}>
-                <Text style={[styles.amount, { color: colors.text }]}>
-                  {isExp ? '−' : '+'}
-                  {formatMoney(d.amount, settings.currency)}
-                </Text>
-                <Text style={[styles.category, { color: colors.textSecondary }]}>{d.category}</Text>
-                <Text style={[styles.meta, { color: colors.textMuted }]}>
-                  {d.date}
-                  {d.tag ? ` · ${d.tag}` : ''}
-                </Text>
-                {d.note ? <Text style={[styles.note, { color: colors.textMuted }]}>{d.note}</Text> : null}
-              </View>
-              <Pressable
-                onPress={() => confirmDelete(item)}
-                style={({ pressed }) => [styles.trash, pressed && { opacity: 0.6 }]}
-              >
-                <Ionicons name="trash-outline" size={22} color={colors.danger} />
-              </Pressable>
-            </View>
-          );
-        }}
       />
     </SafeAreaView>
   );
@@ -212,8 +235,10 @@ const styles = StyleSheet.create({
   toolbar: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, gap: 10 },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   segBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 10,
     borderWidth: 1,
   },
