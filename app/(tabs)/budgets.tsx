@@ -16,7 +16,7 @@ import { useFinance } from '../../src/context/FinanceContext';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
 import { formatMoney, parseAmount } from '../../src/lib/money';
 
-type TabMode = 'budgets' | 'goals';
+type TabMode = 'budgets' | 'goals' | 'recurring';
 
 export default function BudgetsScreen() {
   const {
@@ -29,9 +29,15 @@ export default function BudgetsScreen() {
     upsertBudget,
     removeBudget,
     expenseCategoryOptions,
+    incomeCategoryOptions,
     addGoal,
     updateGoalSaved,
     removeGoal,
+    accounts,
+    recurringItems,
+    addRecurring,
+    removeRecurring,
+    postRecurringForMonth,
     refresh,
   } = useFinance();
   const [mode, setMode] = useState<TabMode>('budgets');
@@ -42,11 +48,24 @@ export default function BudgetsScreen() {
   const [goalDeadline, setGoalDeadline] = useState('');
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [recTitle, setRecTitle] = useState('');
+  const [recAmount, setRecAmount] = useState('');
+  const [recCategory, setRecCategory] = useState<string>(expenseCategoryOptions[0] ?? 'Other');
+  const [recKind, setRecKind] = useState<'expense' | 'income'>('expense');
+  const [recDay, setRecDay] = useState('1');
+  const [recNote, setRecNote] = useState('');
+  const [recAccountId, setRecAccountId] = useState<number | null>(null);
 
   useEffect(() => {
     const first = expenseCategoryOptions[0] ?? 'Other';
     if (!expenseCategoryOptions.includes(category)) setCategory(first);
   }, [expenseCategoryOptions, category]);
+
+  useEffect(() => {
+    const opts = recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
+    const first = opts[0] ?? 'Other';
+    if (!opts.includes(recCategory)) setRecCategory(first);
+  }, [expenseCategoryOptions, incomeCategoryOptions, recKind, recCategory]);
 
   useEffect(() => {
     const next: Record<number, string> = {};
@@ -107,6 +126,47 @@ export default function BudgetsScreen() {
     ]);
   };
 
+  const addRecurringItem = () => {
+    const title = recTitle.trim();
+    if (!title) {
+      Alert.alert('Recurring', 'Enter a name (e.g. Rent, Netflix).');
+      return;
+    }
+    const amt = parseAmount(recAmount);
+    if (amt === null) {
+      Alert.alert('Recurring', 'Enter a positive amount.');
+      return;
+    }
+    const d = Number.parseInt(recDay, 10);
+    if (!Number.isFinite(d) || d < 1 || d > 28) {
+      Alert.alert('Recurring', 'Day of month must be 1–28.');
+      return;
+    }
+    void (async () => {
+      await addRecurring({
+        title,
+        amount: amt,
+        category: recCategory,
+        kind: recKind,
+        dayOfMonth: d,
+        accountId: recAccountId,
+        note: recNote.trim() || null,
+      });
+      setRecTitle('');
+      setRecAmount('');
+      setRecDay('1');
+      setRecNote('');
+      setRecAccountId(null);
+    })();
+  };
+
+  const postRecurring = () => {
+    void (async () => {
+      const n = await postRecurringForMonth(ym);
+      Alert.alert('Recurring', n === 0 ? 'Nothing due to post for this month (already posted or none active).' : `Posted ${n} item(s) for ${ym}.`);
+    })();
+  };
+
   const confirmRemoveGoal = (id: number, name: string) => {
     Alert.alert('Remove goal', `Delete “${name}”?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -147,7 +207,8 @@ export default function BudgetsScreen() {
         {(
           [
             ['budgets', 'Budgets'],
-            ['goals', 'Savings goals'],
+            ['goals', 'Goals'],
+            ['recurring', 'Recurring'],
           ] as const
         ).map(([key, label]) => (
           <Pressable
@@ -258,7 +319,7 @@ export default function BudgetsScreen() {
               ))
             )}
           </>
-        ) : (
+        ) : mode === 'goals' ? (
           <>
             <Text style={[styles.hint, { color: colors.textMuted }]}>
               Track savings targets. Update “saved so far” as you set money aside (manual progress).
@@ -355,6 +416,184 @@ export default function BudgetsScreen() {
               })
             )}
           </>
+        ) : (
+          <>
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              Bills and subscriptions (Budge-style). Post creates real transactions for {ym} when not already posted.
+            </Text>
+            <Pressable
+              style={[styles.btn, { backgroundColor: colors.income, marginBottom: 16 }]}
+              onPress={postRecurring}
+            >
+              <Text style={styles.btnText}>Post due items for {ym}</Text>
+            </Pressable>
+
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>New recurring</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                placeholder="Rent, Netflix…"
+                placeholderTextColor={colors.textMuted}
+                value={recTitle}
+                onChangeText={setRecTitle}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+              <View style={styles.recKindRow}>
+                {(['expense', 'income'] as const).map((k) => (
+                  <Pressable
+                    key={k}
+                    onPress={() => setRecKind(k)}
+                    style={[
+                      styles.modeBtn,
+                      { borderColor: colors.border, backgroundColor: colors.bg },
+                      recKind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        { color: colors.textSecondary },
+                        recKind === k && { color: '#fff', fontWeight: '700' },
+                      ]}
+                    >
+                      {k === 'expense' ? 'Expense' : 'Income'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                keyboardType="decimal-pad"
+                value={recAmount}
+                onChangeText={setRecAmount}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <View style={styles.chips}>
+                {(recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions).map((c) => {
+                  const active = c === recCategory;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => setRecCategory(c)}
+                      style={[
+                        styles.chip,
+                        { borderColor: colors.border, backgroundColor: colors.bg },
+                        active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: colors.textSecondary },
+                          active && { color: colors.accent, fontWeight: '700' },
+                        ]}
+                      >
+                        {c}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Day of month (1–28)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                keyboardType="number-pad"
+                value={recDay}
+                onChangeText={setRecDay}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Account (optional)</Text>
+              <View style={styles.chips}>
+                <Pressable
+                  onPress={() => setRecAccountId(null)}
+                  style={[
+                    styles.chip,
+                    { borderColor: colors.border, backgroundColor: colors.bg },
+                    recAccountId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: colors.textSecondary },
+                      recAccountId === null && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    None
+                  </Text>
+                </Pressable>
+                {accounts.map((a) => {
+                  const active = recAccountId === a.id;
+                  return (
+                    <Pressable
+                      key={a.id}
+                      onPress={() => setRecAccountId(a.id)}
+                      style={[
+                        styles.chip,
+                        { borderColor: colors.border, backgroundColor: colors.bg },
+                        active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: colors.textSecondary },
+                          active && { color: colors.accent, fontWeight: '700' },
+                        ]}
+                      >
+                        {a.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                value={recNote}
+                onChangeText={setRecNote}
+              />
+              <Pressable style={[styles.btn, { backgroundColor: colors.accent }]} onPress={addRecurringItem}>
+                <Text style={styles.btnText}>Save recurring</Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Active recurring</Text>
+            {recurringItems.length === 0 ? (
+              <Text style={[styles.empty, { color: colors.textMuted }]}>None yet.</Text>
+            ) : (
+              recurringItems.map((r) => (
+                <View key={r.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.rowTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cat, { color: colors.text }]}>{r.title}</Text>
+                      <Text style={[styles.nums, { color: colors.textMuted }]}>
+                        {formatMoney(r.amount, settings.currency)} · {r.category} · day {r.dayOfMonth} ·{' '}
+                        {r.kind}
+                        {r.lastPostedYm ? ` · last posted ${r.lastPostedYm}` : ''}
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => void removeRecurring(r.id)} hitSlop={8}>
+                      <Ionicons name="trash-outline" size={22} color={colors.danger} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -365,6 +604,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   modeRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 8, gap: 10 },
+  recKindRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   modeBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   modeBtnText: { fontSize: 14 },
   scroll: { padding: 20, paddingBottom: 40 },

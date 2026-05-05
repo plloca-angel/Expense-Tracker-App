@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -13,28 +14,53 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFinance } from '../../src/context/FinanceContext';
-import { parseAmount, todayISODate } from '../../src/lib/money';
+import { useFinance } from '../src/context/FinanceContext';
+import { parseAmount, todayISODate } from '../src/lib/money';
 
-type EntryKind = 'expense' | 'income';
+export default function EditTransactionScreen() {
+  const { id: idStr, kind: kindStr } = useLocalSearchParams<{ id: string; kind: string }>();
+  const id = Number(idStr);
+  const kind = kindStr === 'income' ? 'income' : 'expense';
+  const {
+    ready,
+    colors,
+    expenses,
+    incomes,
+    expenseCategoryOptions,
+    incomeCategoryOptions,
+    accounts,
+    updateExpense,
+    updateIncome,
+  } = useFinance();
 
-export default function AddScreen() {
-  const { colors, accounts, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
-  const [entryKind, setEntryKind] = useState<EntryKind>('expense');
+  const row = useMemo(() => {
+    if (!Number.isFinite(id)) return null;
+    if (kind === 'expense') return expenses.find((e) => e.id === id) ?? null;
+    return incomes.find((i) => i.id === id) ?? null;
+  }, [id, kind, expenses, incomes]);
+
+  const categories = kind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
   const [amount, setAmount] = useState('');
-  const categories = entryKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
   const [category, setCategory] = useState(categories[0] ?? 'Other');
-  const [accountId, setAccountId] = useState<number | null>(null);
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISODate());
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const onKindChange = (k: EntryKind) => {
-    setEntryKind(k);
-    const next = k === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
-    setCategory(next[0] ?? 'Other');
-  };
+  useEffect(() => {
+    if (!row) return;
+    setAmount(String(row.amount));
+    setCategory(row.category);
+    setTag(row.tag ?? '');
+    setNote(row.note ?? '');
+    setDate(row.date);
+    setAccountId(row.accountId);
+  }, [row]);
+
+  useEffect(() => {
+    if (!categories.includes(category)) setCategory(categories[0] ?? 'Other');
+  }, [categories, category]);
 
   const onSave = async () => {
     const value = parseAmount(amount);
@@ -56,79 +82,45 @@ export default function AddScreen() {
         date: date.trim(),
         accountId,
       };
-      if (entryKind === 'expense') await addExpense(payload);
-      else await addIncome(payload);
+      if (kind === 'expense') await updateExpense(id, payload);
+      else await updateIncome(id, payload);
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
-        /* haptics optional */
+        /* optional */
       }
-      setAmount('');
-      setTag('');
-      setNote('');
-      setDate(todayISODate());
-      router.replace('/(tabs)/activity');
+      router.back();
     } finally {
       setSaving(false);
     }
   };
 
+  if (!ready || !Number.isFinite(id)) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!row) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
+        <Text style={{ color: colors.text, padding: 24 }}>Transaction not found.</Text>
+        <Pressable onPress={() => router.back()} style={{ padding: 24 }}>
+          <Text style={{ color: colors.accent }}>Go back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
-          <View style={styles.kindRow}>
-            <Pressable
-              onPress={() => onKindChange('expense')}
-              style={[
-                styles.kindBtn,
-                { borderColor: colors.border, backgroundColor: colors.card },
-                entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.kindText,
-                  { color: colors.text },
-                  entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
-                ]}
-              >
-                Expense
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onKindChange('income')}
-              style={[
-                styles.kindBtn,
-                { borderColor: colors.border, backgroundColor: colors.card },
-                entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.kindText,
-                  { color: colors.text },
-                  entryKind === 'income' && { color: colors.income, fontWeight: '700' },
-                ]}
-              >
-                Income
-              </Text>
-            </Pressable>
-          </View>
-
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
           <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
           <TextInput
-            style={[
-              styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
-            ]}
-            placeholder="0.00"
-            placeholderTextColor={colors.textMuted}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             keyboardType="decimal-pad"
             value={amount}
             onChangeText={setAmount}
@@ -179,7 +171,7 @@ export default function AddScreen() {
                   accountId === null && { color: colors.accent, fontWeight: '700' },
                 ]}
               >
-                Unspecified
+                None
               </Text>
             </Pressable>
             {accounts.map((a) => {
@@ -208,54 +200,38 @@ export default function AddScreen() {
             })}
           </View>
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Tag</Text>
           <TextInput
-            style={[
-              styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
-            ]}
-            placeholder="e.g. Business, Trip"
-            placeholderTextColor={colors.textMuted}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             value={tag}
             onChangeText={setTag}
           />
 
           <Text style={[styles.label, { color: colors.textSecondary }]}>Date</Text>
           <TextInput
-            style={[
-              styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
-            ]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.textMuted}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             value={date}
             onChangeText={setDate}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Note</Text>
           <TextInput
             style={[
               styles.input,
-              styles.noteInput,
+              styles.note,
               { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
             ]}
-            placeholder="Details"
-            placeholderTextColor={colors.textMuted}
             multiline
             value={note}
             onChangeText={setNote}
           />
 
           <Pressable
-            style={[
-              styles.saveBtn,
-              { backgroundColor: colors.accent },
-              saving && { opacity: 0.7 },
-            ]}
+            style={[styles.save, { backgroundColor: colors.accent }, saving && { opacity: 0.7 }]}
             onPress={() => void onSave()}
             disabled={saving}
           >
-            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save'}</Text>
+            <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save changes'}</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -266,22 +242,14 @@ export default function AddScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { padding: 20, paddingBottom: 40 },
   label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 4 },
-  kindRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  kindBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-  },
-  kindText: { fontSize: 16 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 16 },
-  noteInput: { minHeight: 88, textAlignVertical: 'top' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 14 },
+  note: { minHeight: 80, textAlignVertical: 'top' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
   chipText: { fontSize: 14 },
-  saveBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  save: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

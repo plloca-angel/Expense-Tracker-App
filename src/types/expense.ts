@@ -6,4 +6,5 @@ export type Expense = {
   note: string | null;
   date: string;
   createdAt: string;
+  accountId: number | null;
 };

@@ -35,11 +35,16 @@ export default function SettingsScreen() {
     deleteCustomCategory,
     exportBackup,
     importBackup,
+    accounts,
+    addAccount,
+    deleteAccount,
   } = useFinance();
   const [newExpCat, setNewExpCat] = useState('');
   const [newIncCat, setNewIncCat] = useState('');
   const [exporting, setExporting] = useState(false);
   const [jsonBusy, setJsonBusy] = useState(false);
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccKind, setNewAccKind] = useState<'cash' | 'card' | 'bank' | 'other'>('cash');
 
   const exportCsv = async () => {
     if (!(await Sharing.isAvailableAsync())) {
@@ -129,6 +134,13 @@ export default function SettingsScreen() {
 
   const setTheme = (theme: ThemePreference) => void setSettings({ ...settings, theme });
 
+  const confirmDeleteAccount = (id: number, name: string) => {
+    Alert.alert('Remove account', `Detach “${name}” from transactions and delete it?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void deleteAccount(id) },
+    ]);
+  };
+
   const defaultsExp = new Set(['Food', 'Transport', 'Bills', 'Shopping', 'Health', 'Other']);
   const defaultsInc = new Set(['Salary', 'Freelance', 'Investment', 'Gift', 'Refund', 'Other']);
   const customExpOnly = expenseCategoryOptions.filter((c) => !defaultsExp.has(c));
@@ -209,6 +221,81 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Accounts & wallets</Text>
+          <Text style={[styles.backupHint, { color: colors.textMuted }]}>
+            Label cash, cards, or bank accounts. Used when adding and editing transactions (like Budge multi-account
+            views).
+          </Text>
+          <View style={styles.segment}>
+            {(
+              [
+                ['cash', 'Cash'],
+                ['card', 'Card'],
+                ['bank', 'Bank'],
+                ['other', 'Other'],
+              ] as const
+            ).map(([key, label]) => {
+              const active = newAccKind === key;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setNewAccKind(key)}
+                  style={[
+                    styles.segBtn,
+                    { borderColor: colors.border },
+                    active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.segText,
+                      { color: colors.textSecondary },
+                      active && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.addRow}>
+            <TextInput
+              style={[
+                styles.addInput,
+                { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+              ]}
+              placeholder="Account name"
+              placeholderTextColor={colors.textMuted}
+              value={newAccName}
+              onChangeText={setNewAccName}
+            />
+            <Pressable
+              style={[styles.addBtn, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                const t = newAccName.trim();
+                if (!t) return;
+                void addAccount(t, newAccKind);
+                setNewAccName('');
+              }}
+            >
+              <Text style={styles.addBtnText}>Add</Text>
+            </Pressable>
+          </View>
+          {accounts.map((a) => (
+            <View key={a.id} style={[styles.catRow, { borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: '600' }}>{a.name}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 13 }}>{a.kind}</Text>
+              </View>
+              <Pressable onPress={() => confirmDeleteAccount(a.id, a.name)} accessibilityLabel={`Remove ${a.name}`}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              </Pressable>
+            </View>
+          ))}
         </View>
 
         <Pressable
