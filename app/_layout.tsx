@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { OnboardingModal } from '../src/components/OnboardingModal';
 import { FinanceProvider, useFinance } from '../src/context/FinanceContext';
 
@@ -51,7 +52,7 @@ function ThemedRoot() {
         />
       </Stack>
       {needsOnboarding ? (
-        <OnboardingModal colors={colors} onDone={() => void dismissOnboarding()} />
+        <OnboardingModal colors={colors} onDone={() => dismissOnboarding()} />
       ) : null}
     </View>
   );
@@ -59,8 +60,10 @@ function ThemedRoot() {
 
 export default function RootLayout() {
   return (
-    <FinanceProvider>
-      <ThemedRoot />
-    </FinanceProvider>
+    <SafeAreaProvider>
+      <FinanceProvider>
+        <ThemedRoot />
+      </FinanceProvider>
+    </SafeAreaProvider>
   );
 }

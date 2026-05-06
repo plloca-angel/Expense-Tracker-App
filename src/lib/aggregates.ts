@@ -54,6 +54,41 @@ export function lastNDaysByDay(
   return days;
 }
 
+/** Up to `maxDays` calendar days at the end of `[rangeStart, rangeEnd]` (inclusive), for bar charts. */
+export function dailyTotalsInRangeTail(
+  rows: { date: string; amount: number }[],
+  rangeStart: string,
+  rangeEnd: string,
+  maxDays: number
+): { key: string; label: string; total: number }[] {
+  const start = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+  const end = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
+  const [ey, em, ed] = end.split('-').map(Number);
+  const cur = new Date(ey, em - 1, ed);
+  const keys: string[] = [];
+  for (let i = 0; i < maxDays; i++) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    const key = `${y}-${m}-${d}`;
+    if (key < start) break;
+    keys.push(key);
+    cur.setDate(cur.getDate() - 1);
+  }
+  keys.reverse();
+  const days = keys.map((key) => {
+    const [, mm, dd] = key.split('-');
+    return { key, label: `${Number(mm)}/${Number(dd)}`, total: 0 };
+  });
+  const indexByKey = new Map(days.map((x, i) => [x.key, i] as const));
+  for (const e of rows) {
+    const day = e.date.slice(0, 10);
+    const idx = indexByKey.get(day);
+    if (idx !== undefined) days[idx].total += e.amount;
+  }
+  return days;
+}
+
 export function lastNDaysNetByDay(expenses: Expense[], incomes: Income[], n: number) {
   const spend = lastNDaysByDay(expenses, n);
   const incDays = lastNDaysByDay(incomes, n);

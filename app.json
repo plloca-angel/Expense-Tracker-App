@@ -35,7 +35,9 @@
         {
           "photosPermission": "Allow access to attach a receipt image. Photos stay on this device only."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ]
   }
 }

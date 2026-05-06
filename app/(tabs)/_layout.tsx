@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
 
 export default function TabLayout() {
   const { colors } = useFinance();
+  const insets = useSafeAreaInsets();
+  const tabBarBottomPad = insets.bottom;
 
   return (
     <Tabs
@@ -18,7 +21,8 @@ export default function TabLayout() {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.border,
           paddingTop: 4,
-          height: 58,
+          paddingBottom: tabBarBottomPad,
+          height: 58 + tabBarBottomPad,
         },
       }}
     >

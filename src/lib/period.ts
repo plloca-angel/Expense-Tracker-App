@@ -1,7 +1,23 @@
-export type PeriodFilter = 'month' | '30d' | 'all';
+export type PeriodFilter = 'month' | '30d' | 'all' | 'custom';
 
-export function filterByPeriod<T extends { date: string }>(items: T[], period: PeriodFilter): T[] {
+export type PeriodDateRange = { start: string; end: string };
+
+export function filterByPeriod<T extends { date: string }>(
+  items: T[],
+  period: PeriodFilter,
+  custom?: PeriodDateRange | null
+): T[] {
   if (period === 'all') return items;
+
+  if (period === 'custom') {
+    if (!custom?.start || !custom?.end) return [];
+    const start = custom.start <= custom.end ? custom.start : custom.end;
+    const end = custom.start <= custom.end ? custom.end : custom.start;
+    return items.filter((i) => {
+      const d = i.date.slice(0, 10);
+      return d >= start && d <= end;
+    });
+  }
 
   const now = new Date();
   const y = now.getFullYear();
@@ -17,6 +33,17 @@ export function filterByPeriod<T extends { date: string }>(items: T[], period: P
   cutoff.setDate(cutoff.getDate() - 30);
   const cutStr = cutoff.toISOString().slice(0, 10);
   return items.filter((i) => i.date >= cutStr);
+}
+
+/** Inclusive calendar day count between two YYYY-MM-DD dates (order-independent). */
+export function inclusiveCalendarDays(start: string, end: string): number {
+  const a = start <= end ? start : end;
+  const b = start <= end ? end : start;
+  const [y1, m1, d1] = a.split('-').map(Number);
+  const [y2, m2, d2] = b.split('-').map(Number);
+  const u = Date.UTC(y1, m1 - 1, d1);
+  const v = Date.UTC(y2, m2 - 1, d2);
+  return Math.max(1, Math.floor((v - u) / 86400000) + 1);
 }
 
 export function currentMonthPrefix(): string {
