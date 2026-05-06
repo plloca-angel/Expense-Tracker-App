@@ -384,7 +384,10 @@ export default function BudgetsScreen() {
             </Text>
 
             <View style={[styles.card, surfaceCard(colors, true)]}>
-              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New goal</Text>
+              <View style={styles.titleRow}>
+                <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New goal</Text>
+              </View>
               <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Name</Text>
               <TextInput
                 style={[
@@ -521,7 +524,10 @@ export default function BudgetsScreen() {
             </Pressable>
 
             <View style={[styles.card, surfaceCard(colors, true)]}>
-              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New recurring</Text>
+              <View style={styles.titleRow}>
+                <Ionicons name="repeat-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New recurring</Text>
+              </View>
               <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Name</Text>
               <TextInput
                 style={[
@@ -747,6 +753,7 @@ const styles = StyleSheet.create({
   scroll: { padding: space[3], paddingBottom: space[5] },
   hint: { marginBottom: space[2] },
   card: { padding: space[2], marginBottom: space[3] - 4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   cardTitle: { marginBottom: space[1] + 4 },
   label: { marginBottom: space[1] },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] - 2 },

@@ -90,7 +90,6 @@ export default function OverviewScreen() {
 
   const headerSubtitle = useMemo(() => {
     if (period === 'month') return 'This month';
-    if (period === '30d') return 'Last 30 days';
     if (period === 'all') return 'All time';
     if (!customRange) return 'Custom dates';
     return `${customRange.start} → ${customRange.end}`;
@@ -190,7 +189,6 @@ export default function OverviewScreen() {
           {(
             [
               ['month', 'This month'],
-              ['30d', '30 days'],
               ['all', 'All time'],
               ['custom', 'Custom'],
             ] as const
@@ -415,14 +413,15 @@ export default function OverviewScreen() {
         ) : null}
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Insights</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="sparkles-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Insights</Text>
+          </View>
           <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textSecondary }]}>
             Avg spend / day (
             {period === 'month'
               ? 'this month'
-              : period === '30d'
-                ? 'last 30 days'
-                : period === 'custom'
+              : period === 'custom'
                   ? 'selected dates'
                   : 'all time'}
             ):{' '}
@@ -458,7 +457,10 @@ export default function OverviewScreen() {
 
         {goals.length > 0 ? (
           <View style={[styles.card, surfaceCard(colors, true)]}>
-            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Savings goals</Text>
+            <View style={styles.titleRow}>
+              <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Savings goals</Text>
+            </View>
             {goals.slice(0, 3).map((g) => {
               const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
               return (
@@ -485,7 +487,10 @@ export default function OverviewScreen() {
 
         {budgetRows.length > 0 ? (
           <View style={[styles.card, surfaceCard(colors, true)]}>
-            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Budgets · {ym}</Text>
+            <View style={styles.titleRow}>
+              <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Budgets · {ym}</Text>
+            </View>
             {budgetRows.map((b) => (
               <View key={b.id} style={styles.budgetBlock}>
                 <View style={styles.budgetTop}>
@@ -513,7 +518,10 @@ export default function OverviewScreen() {
         ) : null}
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>By category</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="pie-chart-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>By category</Text>
+          </View>
           {pieData.length === 0 ? (
             <Text style={[typeStyles.body, styles.empty, { color: colors.textMuted }]}>
               No expenses in this period — add entries or widen the range.
@@ -562,7 +570,10 @@ export default function OverviewScreen() {
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>{barChartTitle}</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="bar-chart-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>{barChartTitle}</Text>
+          </View>
           {fExpenses.length === 0 ? (
             <Text style={[typeStyles.body, styles.empty, { color: colors.textMuted }]}>No data in this period.</Text>
           ) : (
@@ -630,6 +641,7 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: space[3], paddingTop: space[2], paddingBottom: space[4] },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: space[1] + 4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   periodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
   customRangeCard: { marginBottom: space[2] },
   customRangeRow: { flexDirection: 'row', gap: space[2] },
