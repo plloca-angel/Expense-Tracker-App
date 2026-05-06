@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,7 @@ import { EmptyStateCard } from '../../src/components/EmptyStateCard';
 import { PressableCard } from '../../src/components/PressableCard';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { categoryGlyph, categoryIconColor } from '../../src/lib/categoryIcons';
 import { hapticLight, hapticSuccess, hapticWarning } from '../../src/lib/haptics';
 import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
@@ -80,6 +81,8 @@ export default function BudgetsScreen() {
   const [recDay, setRecDay] = useState('1');
   const [recNote, setRecNote] = useState('');
   const [recAccountId, setRecAccountId] = useState<number | null>(null);
+  const [budgetSaveNotice, setBudgetSaveNotice] = useState(false);
+  const budgetSaveNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const plansSubtitle =
     mode === 'budgets'
@@ -88,6 +91,12 @@ export default function BudgetsScreen() {
         ? 'Manual savings targets'
         : 'Scheduled bills & income';
   useTabHeaderSubtitle('Plans', plansSubtitle, colors);
+
+  useEffect(() => {
+    return () => {
+      if (budgetSaveNoticeTimer.current) clearTimeout(budgetSaveNoticeTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const first = expenseCategoryOptions[0] ?? 'Other';
@@ -153,6 +162,12 @@ export default function BudgetsScreen() {
       await upsertBudget(category, lim);
       void hapticSuccess();
       setLimitStr('');
+      if (budgetSaveNoticeTimer.current) clearTimeout(budgetSaveNoticeTimer.current);
+      setBudgetSaveNotice(true);
+      budgetSaveNoticeTimer.current = setTimeout(() => {
+        setBudgetSaveNotice(false);
+        budgetSaveNoticeTimer.current = null;
+      }, 2200);
     })();
   };
 
@@ -471,15 +486,18 @@ export default function BudgetsScreen() {
                         pressed && { opacity: 0.88 },
                       ]}
                     >
-                      <Text
-                        style={[
-                          typeStyles.captionMedium,
-                          { color: colors.textSecondary },
-                          active && { color: colors.accent, fontWeight: '700' },
-                        ]}
-                      >
-                        {c}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Ionicons name={categoryGlyph(c, 'expense')} size={15} color={categoryIconColor(c, 'expense')} />
+                        <Text
+                          style={[
+                            typeStyles.captionMedium,
+                            { color: colors.textSecondary },
+                            active && { color: colors.accent, fontWeight: '700' },
+                          ]}
+                        >
+                          {c}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
@@ -498,12 +516,24 @@ export default function BudgetsScreen() {
                 value={limitStr}
                 onChangeText={setLimitStr}
               />
-              <Pressable
-                style={({ pressed }) => [styles.btn, { backgroundColor: colors.accent }, pressed && { opacity: 0.9 }]}
-                onPress={addBudget}
-              >
-                <Text style={styles.btnText}>Save budget</Text>
-              </Pressable>
+              <View style={styles.saveBudgetFooter}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.btn,
+                    { backgroundColor: colors.accent, flex: 1 },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  onPress={addBudget}
+                >
+                  <Text style={styles.btnText}>Save budget</Text>
+                </Pressable>
+                {budgetSaveNotice ? (
+                  <View style={styles.saveBudgetHint} accessibilityLiveRegion="polite">
+                    <Ionicons name="checkmark-circle" size={22} color={colors.income} />
+                    <Text style={[typeStyles.captionMedium, { color: colors.income, fontWeight: '700' }]}>Saved</Text>
+                  </View>
+                ) : null}
+              </View>
             </PressableCard>
 
             <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>Active budgets</Text>
@@ -524,7 +554,14 @@ export default function BudgetsScreen() {
                   accessibilityLabel={`Budget row, ${b.category}`}
                 >
                   <View style={styles.rowTop}>
-                    <Text style={[typeStyles.title, { color: colors.text }]}>{b.category}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+                      <Ionicons
+                        name={categoryGlyph(b.category, 'expense')}
+                        size={22}
+                        color={categoryIconColor(b.category, 'expense')}
+                      />
+                      <Text style={[typeStyles.title, { color: colors.text, flex: 1 }]}>{b.category}</Text>
+                    </View>
                     <Pressable
                       onPress={() => confirmRemoveBudget(b.id, b.category)}
                       hitSlop={12}
@@ -829,15 +866,18 @@ export default function BudgetsScreen() {
                         pressed && { opacity: 0.88 },
                       ]}
                     >
-                      <Text
-                        style={[
-                          typeStyles.captionMedium,
-                          { color: colors.textSecondary },
-                          active && { color: colors.accent, fontWeight: '700' },
-                        ]}
-                      >
-                        {c}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Ionicons name={categoryGlyph(c, recKind)} size={15} color={categoryIconColor(c, recKind)} />
+                        <Text
+                          style={[
+                            typeStyles.captionMedium,
+                            { color: colors.textSecondary },
+                            active && { color: colors.accent, fontWeight: '700' },
+                          ]}
+                        >
+                          {c}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
@@ -1055,6 +1095,8 @@ const styles = StyleSheet.create({
   },
   btn: { borderRadius: radii.md, paddingVertical: space[2] - 2, alignItems: 'center' },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  saveBudgetFooter: { flexDirection: 'row', alignItems: 'center', gap: space[1] + 4 },
+  saveBudgetHint: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { marginBottom: space[1] + 4 },
   row: { borderRadius: radii.lg - 2, padding: space[2], marginBottom: space[1] + 4 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },

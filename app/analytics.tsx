@@ -20,6 +20,7 @@ import {
   spendByDayInMonth,
   topExpenseCategories,
 } from '../src/lib/analytics';
+import { categoryGlyph, categoryIconColor } from '../src/lib/categoryIcons';
 import { lastNDaysNetByDay } from '../src/lib/aggregates';
 import { formatMoney } from '../src/lib/money';
 import { currentMonthPrefix, monthlyTotalsLastNMonths } from '../src/lib/period';
@@ -163,6 +164,7 @@ export default function AnalyticsScreen() {
                 style={[styles.catRow, { borderColor: colors.border }]}
               >
                 <View style={[styles.dot, { backgroundColor: CATEGORY_CHART_COLORS[idx % CATEGORY_CHART_COLORS.length] }]} />
+                <Ionicons name={categoryGlyph(c.category, 'expense')} size={17} color={categoryIconColor(c.category, 'expense')} />
                 <Text style={[styles.catName, { color: colors.text }]}>{c.category}</Text>
                 <Text style={[styles.catAmt, { color: colors.textSecondary }]}>
                   {formatMoney(c.total, settings.currency)}
@@ -181,6 +183,7 @@ export default function AnalyticsScreen() {
           ) : (
             movers.map((m) => (
               <View key={m.category} style={[styles.moverRow, { borderColor: colors.border }]}>
+                <Ionicons name={categoryGlyph(m.category, 'expense')} size={17} color={categoryIconColor(m.category, 'expense')} />
                 <Text style={[styles.catName, { color: colors.text, flex: 1 }]}>{m.category}</Text>
                 <Text
                   style={{
@@ -275,6 +278,7 @@ const styles = StyleSheet.create({
   moverRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },

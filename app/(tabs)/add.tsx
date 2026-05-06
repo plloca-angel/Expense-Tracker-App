@@ -20,6 +20,7 @@ import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
 import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
+import { categoryGlyph, categoryIconColor } from '../../src/lib/categoryIcons';
 import { parseAmount, parseISODateLocal, todayISODate, toISODateString } from '../../src/lib/money';
 import { pickAndStoreReceipt, receiptSizeLimitLabel } from '../../src/lib/receipts';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
@@ -384,15 +385,18 @@ export default function AddScreen() {
                             pressed && { opacity: 0.88 },
                           ]}
                         >
-                          <Text
-                            style={[
-                              typeStyles.bodySmall,
-                              { color: colors.textSecondary },
-                              active && { color: colors.accent, fontWeight: '700' },
-                            ]}
-                          >
-                            {c}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Ionicons name={categoryGlyph(c, 'expense')} size={15} color={categoryIconColor(c, 'expense')} />
+                            <Text
+                              style={[
+                                typeStyles.bodySmall,
+                                { color: colors.textSecondary },
+                                active && { color: colors.accent, fontWeight: '700' },
+                              ]}
+                            >
+                              {c}
+                            </Text>
+                          </View>
                         </Pressable>
                       );
                     })}
@@ -445,15 +449,22 @@ export default function AddScreen() {
                         pressed && { opacity: 0.88 },
                       ]}
                     >
-                      <Text
-                        style={[
-                          typeStyles.bodySmall,
-                          { color: colors.textSecondary },
-                          active && { color: colors.accent, fontWeight: '700' },
-                        ]}
-                      >
-                        {c}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Ionicons
+                          name={categoryGlyph(c, entryKind)}
+                          size={15}
+                          color={categoryIconColor(c, entryKind)}
+                        />
+                        <Text
+                          style={[
+                            typeStyles.bodySmall,
+                            { color: colors.textSecondary },
+                            active && { color: colors.accent, fontWeight: '700' },
+                          ]}
+                        >
+                          {c}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
