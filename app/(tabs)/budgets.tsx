@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,7 +22,7 @@ import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess, hapticWarning } from '../../src/lib/haptics';
 import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
-import { formatMoney, parseAmount } from '../../src/lib/money';
+import { formatMoney, parseAmount, parseISODateLocal, toISODateString } from '../../src/lib/money';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 type TabMode = 'budgets' | 'goals' | 'recurring';
@@ -52,6 +55,7 @@ export default function BudgetsScreen() {
   const [goalName, setGoalName] = useState('');
   const [goalTarget, setGoalTarget] = useState('');
   const [goalDeadline, setGoalDeadline] = useState('');
+  const [goalPickerOpen, setGoalPickerOpen] = useState(false);
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [recTitle, setRecTitle] = useState('');
@@ -187,6 +191,7 @@ export default function BudgetsScreen() {
   const postRecurring = () => {
     void (async () => {
       const n = await postRecurringForMonth(ym);
+      await refresh();
       Alert.alert('Recurring', n === 0 ? 'Nothing due to post for this month (already posted or none active).' : `Posted ${n} item(s) for ${ym}.`);
     })();
   };
@@ -427,16 +432,37 @@ export default function BudgetsScreen() {
               <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
                 Deadline (optional)
               </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
-                ]}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-                value={goalDeadline}
-                onChangeText={setGoalDeadline}
-              />
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }]}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textMuted}
+                  value={goalDeadline}
+                  onChangeText={setGoalDeadline}
+                  keyboardType="numbers-and-punctuation"
+                />
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    void hapticLight();
+                    runLayoutAnimation();
+                    setGoalPickerOpen(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pick goal deadline"
+                  style={({ pressed }) => [
+                    styles.dateTrigger,
+                    surfaceCard(colors, false),
+                    { backgroundColor: colors.bg },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>
+                    {goalDeadline.trim() ? goalDeadline.trim() : 'No deadline'}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                </Pressable>
+              )}
               <Pressable
                 style={({ pressed }) => [styles.btn, { backgroundColor: colors.income }, pressed && { opacity: 0.9 }]}
                 onPress={addSavingsGoal}
@@ -760,6 +786,44 @@ export default function BudgetsScreen() {
           </>
         )}
       </ScrollView>
+
+      {goalPickerOpen && Platform.OS === 'ios' ? (
+        <Modal animationType="slide" transparent visible onRequestClose={() => setGoalPickerOpen(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setGoalPickerOpen(false)}>
+            <Pressable
+              style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.modalToolbar, { borderBottomColor: colors.border }]}>
+                <Pressable onPress={() => setGoalPickerOpen(false)} hitSlop={12} accessibilityRole="button">
+                  <Text style={[typeStyles.bodyMedium, { color: colors.accent, fontWeight: '600' }]}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={parseISODateLocal(goalDeadline.trim() || `${ym}-01`)}
+                mode="date"
+                display="spinner"
+                onChange={(_, picked) => {
+                  if (picked) setGoalDeadline(toISODateString(picked));
+                }}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {goalPickerOpen && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={parseISODateLocal(goalDeadline.trim() || `${ym}-01`)}
+          mode="date"
+          display="default"
+          onChange={(event: DateTimePickerEvent, picked?: Date) => {
+            setGoalPickerOpen(false);
+            if (event.type !== 'set' || !picked) return;
+            setGoalDeadline(toISODateString(picked));
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -815,4 +879,29 @@ const styles = StyleSheet.create({
   applyBtn: { paddingHorizontal: space[2] + 2, paddingVertical: space[1] + 4, borderRadius: radii.md },
   applyBtnText: { color: '#fff', fontWeight: '700' },
   iconHit: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  dateTrigger: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 4,
+    marginBottom: space[2] - 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: space[2],
+  },
+  modalToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: space[3],
+    paddingVertical: space[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

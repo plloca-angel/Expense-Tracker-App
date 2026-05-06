@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,7 +20,7 @@ import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
 import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
-import { parseAmount, todayISODate } from '../../src/lib/money';
+import { parseAmount, parseISODateLocal, todayISODate, toISODateString } from '../../src/lib/money';
 import { pickAndStoreReceipt, receiptSizeLimitLabel } from '../../src/lib/receipts';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
@@ -45,6 +47,7 @@ export default function AddScreen() {
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISODate());
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [splitMode, setSplitMode] = useState(false);
   const [splitLines, setSplitLines] = useState<SplitLine[]>([
@@ -444,17 +447,30 @@ export default function AddScreen() {
           />
 
           <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Date</Text>
-          <TextInput
-            style={[
-              styles.input,
-              surfaceCard(colors, false),
-              { color: colors.text },
-            ]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.textMuted}
-            value={date}
-            onChangeText={setDate}
-          />
+          {Platform.OS === 'web' ? (
+            <TextInput
+              style={[styles.input, surfaceCard(colors, false), { color: colors.text }]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+              value={date}
+              onChangeText={setDate}
+              keyboardType="numbers-and-punctuation"
+            />
+          ) : (
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                runLayoutAnimation();
+                setPickerOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Pick date"
+              style={({ pressed }) => [styles.dateTrigger, surfaceCard(colors, false), pressed && { opacity: 0.9 }]}
+            >
+              <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>{date}</Text>
+              <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+          )}
 
           <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
           <TextInput
@@ -517,6 +533,44 @@ export default function AddScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {pickerOpen && Platform.OS === 'ios' ? (
+        <Modal animationType="slide" transparent visible onRequestClose={() => setPickerOpen(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setPickerOpen(false)}>
+            <Pressable
+              style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.modalToolbar, { borderBottomColor: colors.border }]}>
+                <Pressable onPress={() => setPickerOpen(false)} hitSlop={12} accessibilityRole="button">
+                  <Text style={[typeStyles.bodyMedium, { color: colors.accent, fontWeight: '600' }]}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={parseISODateLocal(date)}
+                mode="date"
+                display="spinner"
+                onChange={(_, picked) => {
+                  if (picked) setDate(toISODateString(picked));
+                }}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {pickerOpen && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={parseISODateLocal(date)}
+          mode="date"
+          display="default"
+          onChange={(event: DateTimePickerEvent, picked?: Date) => {
+            setPickerOpen(false);
+            if (event.type !== 'set' || !picked) return;
+            setDate(toISODateString(picked));
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -557,4 +611,29 @@ const styles = StyleSheet.create({
   receiptBtn: { paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1 },
   saveBtn: { borderRadius: radii.lg - 2, paddingVertical: space[2], alignItems: 'center', marginTop: space[1] },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  dateTrigger: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 4,
+    marginBottom: space[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: space[2],
+  },
+  modalToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: space[3],
+    paddingVertical: space[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

@@ -32,6 +32,12 @@ function shiftYm(ym: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function formatYmLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, (m ?? 1) - 1, 1);
+  return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+
 export default function AnalyticsScreen() {
   const { colors, settings, expenses, incomes } = useFinance();
   const [ym, setYm] = useState(() => currentMonthPrefix());
@@ -51,7 +57,7 @@ export default function AnalyticsScreen() {
   const barMax = Math.max(1, ...last12.map((x) => x.total));
   const barData = last12.map((x, i) => ({
     value: x.total,
-    label: x.label.slice(0, 3),
+    label: x.label.split(' ')[0] ?? x.label,
     frontColor: CATEGORY_CHART_COLORS[i % CATEGORY_CHART_COLORS.length],
   }));
 
@@ -75,7 +81,7 @@ export default function AnalyticsScreen() {
           >
             <Ionicons name="chevron-back" size={24} color={colors.accent} />
           </Pressable>
-          <Text style={[styles.monthTitle, { color: colors.text }]}>{ym}</Text>
+          <Text style={[styles.monthTitle, { color: colors.text }]}>{formatYmLabel(ym)}</Text>
           <Pressable
             onPress={() => setYm((y) => shiftYm(y, 1))}
             style={styles.navBtn}
@@ -195,6 +201,7 @@ export default function AnalyticsScreen() {
             xAxisThickness={0}
             yAxisThickness={0}
             yAxisTextStyle={{ color: colors.chartLabel, fontSize: 9 }}
+            xAxisLabelTextStyle={{ color: colors.textMuted, fontSize: 10 }}
             maxValue={barMax}
             noOfSections={4}
             isAnimated
