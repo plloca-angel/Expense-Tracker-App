@@ -1,6 +1,44 @@
 import type { Expense } from '../types/expense';
 import type { Income } from '../types/income';
 
+/** Include whole split group if any line matches `match`. */
+export function filterExpensesGroupAware(expenses: Expense[], match: (e: Expense) => boolean): Expense[] {
+  const byG = new Map<string, Expense[]>();
+  const singles: Expense[] = [];
+  for (const e of expenses) {
+    if (e.splitGroupId) {
+      const a = byG.get(e.splitGroupId) ?? [];
+      a.push(e);
+      byG.set(e.splitGroupId, a);
+    } else singles.push(e);
+  }
+  const out: Expense[] = [];
+  for (const e of singles) {
+    if (match(e)) out.push(e);
+  }
+  for (const arr of byG.values()) {
+    if (arr.some(match)) out.push(...arr);
+  }
+  return out;
+}
+
+export function filterExpensesForActivitySearch(expenses: Expense[], q: string): Expense[] {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return expenses;
+  const groupHit = new Set<string>();
+  for (const e of expenses) {
+    if (e.splitGroupId) {
+      const t = `${e.note ?? ''} ${e.tag ?? ''} ${e.category}`.toLowerCase();
+      if (t.includes(needle)) groupHit.add(e.splitGroupId);
+    }
+  }
+  return expenses.filter((e) => {
+    const t = `${e.note ?? ''} ${e.tag ?? ''} ${e.category}`.toLowerCase();
+    if (t.includes(needle)) return true;
+    return !!(e.splitGroupId && groupHit.has(e.splitGroupId));
+  });
+}
+
 export type ActivityExpenseRow =
   | { shape: 'single'; expense: Expense }
   | { shape: 'split'; expenses: Expense[] };

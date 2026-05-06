@@ -10,17 +10,15 @@ import { useColorScheme } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { CATEGORIES, INCOME_CATEGORIES } from '../constants';
 import * as database from '../db/database';
-import type { NewExpenseInput } from '../db/database';
-import type { NewIncomeInput } from '../db/database';
-import type { NewSplitExpenseInput } from '../db/database';
-import type { NewGoalInput } from '../db/database';
-import type { BackupPayload, BackupPayloadV3 } from '../lib/backup';
+import type { NewExpenseInput, NewIncomeInput, NewGoalInput, NewSplitExpenseInput } from '../db/database';
+import type { BackupPayload } from '../lib/backup';
 import { darkColors, lightColors, type ThemeColors } from '../theme/colors';
+import type { Account } from '../types/account';
 import type { Budget } from '../types/budget';
 import type { SavingsGoal } from '../types/goal';
 import type { Expense } from '../types/expense';
 import type { Income } from '../types/income';
-import type { NewRecurringRuleInput, RecurringRule } from '../types/recurring';
+import type { RecurringItem } from '../types/recurring';
 import type { AppSettings, ThemePreference } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 
@@ -34,14 +32,19 @@ type FinanceContextValue = {
   incomes: Income[];
   budgets: Budget[];
   goals: SavingsGoal[];
-  recurringRules: RecurringRule[];
+  accounts: Account[];
+  recurringItems: RecurringItem[];
   expenseCategoryOptions: string[];
   incomeCategoryOptions: string[];
+  needsOnboarding: boolean;
+  dismissOnboarding: () => Promise<void>;
   refresh: () => Promise<void>;
   addExpense: (input: NewExpenseInput) => Promise<void>;
   addSplitExpense: (input: NewSplitExpenseInput) => Promise<void>;
+  updateExpense: (id: number, input: NewExpenseInput) => Promise<void>;
   removeExpense: (id: number) => Promise<void>;
   addIncome: (input: NewIncomeInput) => Promise<void>;
+  updateIncome: (id: number, input: NewIncomeInput) => Promise<void>;
   removeIncome: (id: number) => Promise<void>;
   upsertBudget: (category: string, monthlyLimit: number) => Promise<void>;
   removeBudget: (id: number) => Promise<void>;
@@ -50,10 +53,12 @@ type FinanceContextValue = {
   addGoal: (input: NewGoalInput) => Promise<void>;
   updateGoalSaved: (id: number, savedAmount: number) => Promise<void>;
   removeGoal: (id: number) => Promise<void>;
-  addRecurringRule: (input: NewRecurringRuleInput) => Promise<void>;
-  removeRecurringRule: (id: number) => Promise<void>;
-  postRecurringRule: (id: number, entryDate: string) => Promise<void>;
-  exportBackup: () => Promise<BackupPayloadV3>;
+  addAccount: (name: string, kind: string) => Promise<void>;
+  deleteAccount: (id: number) => Promise<void>;
+  addRecurring: (input: database.NewRecurringInput) => Promise<void>;
+  removeRecurring: (id: number) => Promise<void>;
+  postRecurringForMonth: (ym: string) => Promise<number>;
+  exportBackup: () => Promise<BackupPayload>;
   importBackup: (data: BackupPayload) => Promise<void>;
 };
 
@@ -74,10 +79,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
-  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [customExpenseCats, setCustomExpenseCats] = useState<string[]>([]);
   const [customIncomeCats, setCustomIncomeCats] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const resolvedTheme: 'light' | 'dark' =
     settings.theme === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : settings.theme;
@@ -96,24 +103,26 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!db) return;
-    const [ex, inc, bud, gl, rec, s, ce, ci] = await Promise.all([
+    const [ex, inc, bud, gl, s, ce, ci, acc, rec] = await Promise.all([
       database.fetchAllExpenses(db),
       database.fetchAllIncomes(db),
       database.fetchAllBudgets(db),
       database.fetchAllGoals(db),
-      database.fetchAllRecurringRules(db),
       database.loadAppSettings(db),
       database.fetchCustomCategories(db, 'expense'),
       database.fetchCustomCategories(db, 'income'),
+      database.fetchAllAccounts(db),
+      database.fetchAllRecurring(db),
     ]);
     setExpenses(ex);
     setIncomes(inc);
     setBudgets(bud);
     setGoals(gl);
-    setRecurringRules(rec);
     setSettingsState(s);
     setCustomExpenseCats(ce);
     setCustomIncomeCats(ci);
+    setAccounts(acc);
+    setRecurringItems(rec);
   }, [db]);
 
   useEffect(() => {
@@ -122,25 +131,29 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       const sqlite = await database.openDb();
       if (cancelled) return;
       setDb(sqlite);
-      const [ex, inc, bud, gl, rec, s, ce, ci] = await Promise.all([
+      const [ex, inc, bud, gl, s, ce, ci, acc, rec, seen] = await Promise.all([
         database.fetchAllExpenses(sqlite),
         database.fetchAllIncomes(sqlite),
         database.fetchAllBudgets(sqlite),
         database.fetchAllGoals(sqlite),
-        database.fetchAllRecurringRules(sqlite),
         database.loadAppSettings(sqlite),
         database.fetchCustomCategories(sqlite, 'expense'),
         database.fetchCustomCategories(sqlite, 'income'),
+        database.fetchAllAccounts(sqlite),
+        database.fetchAllRecurring(sqlite),
+        database.getOnboardingSeen(sqlite),
       ]);
       if (cancelled) return;
       setExpenses(ex);
       setIncomes(inc);
       setBudgets(bud);
       setGoals(gl);
-      setRecurringRules(rec);
       setSettingsState(s);
       setCustomExpenseCats(ce);
       setCustomIncomeCats(ci);
+      setAccounts(acc);
+      setRecurringItems(rec);
+      setNeedsOnboarding(!seen);
       setReady(true);
     })();
     return () => {
@@ -160,6 +173,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db]
   );
 
+  const dismissOnboarding = useCallback(async () => {
+    if (!db) return;
+    await database.setOnboardingSeen(db);
+    setNeedsOnboarding(false);
+  }, [db]);
+
   const addExpense = useCallback(
     async (input: NewExpenseInput) => {
       if (!db) return;
@@ -178,6 +197,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const updateExpense = useCallback(
+    async (id: number, input: NewExpenseInput) => {
+      if (!db) return;
+      await database.updateExpense(db, id, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
   const removeExpense = useCallback(
     async (id: number) => {
       if (!db) return;
@@ -191,6 +219,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     async (input: NewIncomeInput) => {
       if (!db) return;
       await database.insertIncome(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const updateIncome = useCallback(
+    async (id: number, input: NewIncomeInput) => {
+      if (!db) return;
+      await database.updateIncome(db, id, input);
       await refresh();
     },
     [db, refresh]
@@ -268,29 +305,48 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
-  const addRecurringRule = useCallback(
-    async (input: NewRecurringRuleInput) => {
+  const addAccount = useCallback(
+    async (name: string, kind: string) => {
       if (!db) return;
-      await database.insertRecurringRule(db, input);
+      await database.insertAccount(db, name, kind);
       await refresh();
     },
     [db, refresh]
   );
 
-  const removeRecurringRule = useCallback(
+  const deleteAccount = useCallback(
     async (id: number) => {
       if (!db) return;
-      await database.deleteRecurringRule(db, id);
+      await database.deleteAccount(db, id);
       await refresh();
     },
     [db, refresh]
   );
 
-  const postRecurringRule = useCallback(
-    async (id: number, entryDate: string) => {
+  const addRecurring = useCallback(
+    async (input: database.NewRecurringInput) => {
       if (!db) return;
-      await database.materializeRecurringRule(db, id, entryDate);
+      await database.insertRecurring(db, input);
       await refresh();
+    },
+    [db, refresh]
+  );
+
+  const removeRecurring = useCallback(
+    async (id: number) => {
+      if (!db) return;
+      await database.deleteRecurring(db, id);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const postRecurringForMonth = useCallback(
+    async (ym: string) => {
+      if (!db) return 0;
+      const n = await database.postRecurringForMonth(db, ym);
+      await refresh();
+      return n;
     },
     [db, refresh]
   );
@@ -320,14 +376,19 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       incomes,
       budgets,
       goals,
-      recurringRules,
+      accounts,
+      recurringItems,
       expenseCategoryOptions,
       incomeCategoryOptions,
+      needsOnboarding,
+      dismissOnboarding,
       refresh,
       addExpense,
       addSplitExpense,
+      updateExpense,
       removeExpense,
       addIncome,
+      updateIncome,
       removeIncome,
       upsertBudget,
       removeBudget,
@@ -336,9 +397,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       addGoal,
       updateGoalSaved,
       removeGoal,
-      addRecurringRule,
-      removeRecurringRule,
-      postRecurringRule,
+      addAccount,
+      deleteAccount,
+      addRecurring,
+      removeRecurring,
+      postRecurringForMonth,
       exportBackup,
       importBackup,
     }),
@@ -352,14 +415,19 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       incomes,
       budgets,
       goals,
-      recurringRules,
+      accounts,
+      recurringItems,
       expenseCategoryOptions,
       incomeCategoryOptions,
+      needsOnboarding,
+      dismissOnboarding,
       refresh,
       addExpense,
       addSplitExpense,
+      updateExpense,
       removeExpense,
       addIncome,
+      updateIncome,
       removeIncome,
       upsertBudget,
       removeBudget,
@@ -368,9 +436,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       addGoal,
       updateGoalSaved,
       removeGoal,
-      addRecurringRule,
-      removeRecurringRule,
-      postRecurringRule,
+      addAccount,
+      deleteAccount,
+      addRecurring,
+      removeRecurring,
+      postRecurringForMonth,
       exportBackup,
       importBackup,
     ]

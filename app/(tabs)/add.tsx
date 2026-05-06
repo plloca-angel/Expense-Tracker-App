@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
@@ -14,8 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
+import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
 import { parseAmount, todayISODate } from '../../src/lib/money';
 import { pickAndStoreReceipt, receiptSizeLimitLabel } from '../../src/lib/receipts';
+import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 type EntryKind = 'expense' | 'income';
 
@@ -24,28 +26,41 @@ type SplitLine = { category: string; amount: string };
 export default function AddScreen() {
   const {
     colors,
+    accounts,
     addExpense,
     addSplitExpense,
     addIncome,
     expenseCategoryOptions,
     incomeCategoryOptions,
   } = useFinance();
+  useTabHeaderSubtitle('Add', 'New entry', colors);
   const [entryKind, setEntryKind] = useState<EntryKind>('expense');
-  const [splitMode, setSplitMode] = useState(false);
   const [amount, setAmount] = useState('');
   const categories = entryKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
   const [category, setCategory] = useState(categories[0] ?? 'Other');
-  const [splitLines, setSplitLines] = useState<SplitLine[]>([
-    { category: categories[0] ?? 'Other', amount: '' },
-    { category: categories[1] ?? categories[0] ?? 'Other', amount: '' },
-  ]);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISODate());
-  const [receiptUri, setReceiptUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitLines, setSplitLines] = useState<SplitLine[]>([
+    { category: expenseCategoryOptions[0] ?? 'Other', amount: '' },
+    { category: expenseCategoryOptions[1] ?? expenseCategoryOptions[0] ?? 'Other', amount: '' },
+  ]);
+  const [receiptUri, setReceiptUri] = useState<string | null>(null);
+
+  const splitTotal = useMemo(() => {
+    let s = 0;
+    for (const l of splitLines) {
+      const v = parseAmount(l.amount);
+      if (v !== null) s += v;
+    }
+    return s;
+  }, [splitLines]);
 
   const onKindChange = (k: EntryKind) => {
+    void hapticLight();
     setEntryKind(k);
     const next = k === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
     const first = next[0] ?? 'Other';
@@ -60,14 +75,14 @@ export default function AddScreen() {
     }
   };
 
-  const splitTotal = useMemo(() => {
-    let s = 0;
-    for (const l of splitLines) {
-      const v = parseAmount(l.amount);
-      if (v !== null) s += v;
+  const onPickReceipt = async () => {
+    try {
+      const uri = await pickAndStoreReceipt();
+      if (uri) setReceiptUri(uri);
+    } catch (e) {
+      Alert.alert('Receipt', e instanceof Error ? e.message : 'Could not attach.');
     }
-    return s;
-  }, [splitLines]);
+  };
 
   const onSave = async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
@@ -97,6 +112,7 @@ export default function AddScreen() {
           tag: tag.trim() || null,
           note: note.trim() || null,
           date: date.trim(),
+          accountId,
           receiptUri,
         });
       } else {
@@ -106,30 +122,19 @@ export default function AddScreen() {
           setSaving(false);
           return;
         }
-        if (entryKind === 'expense') {
-          await addExpense({
-            amount: value,
-            category,
-            tag: tag.trim() || null,
-            note: note.trim() || null,
-            date: date.trim(),
-            receiptUri,
-          });
-        } else {
-          await addIncome({
-            amount: value,
-            category,
-            tag: tag.trim() || null,
-            note: note.trim() || null,
-            date: date.trim(),
-          });
-        }
+        const payload = {
+          amount: value,
+          category,
+          tag: tag.trim() || null,
+          note: note.trim() || null,
+          date: date.trim(),
+          accountId,
+          receiptUri: entryKind === 'expense' ? receiptUri : undefined,
+        };
+        if (entryKind === 'expense') await addExpense(payload);
+        else await addIncome(payload);
       }
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {
-        /* optional */
-      }
+      void hapticSuccess();
       setAmount('');
       setTag('');
       setNote('');
@@ -146,15 +151,6 @@ export default function AddScreen() {
     }
   };
 
-  const onPickReceipt = async () => {
-    try {
-      const uri = await pickAndStoreReceipt();
-      if (uri) setReceiptUri(uri);
-    } catch (e) {
-      Alert.alert('Receipt', e instanceof Error ? e.message : 'Could not attach.');
-    }
-  };
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -163,19 +159,20 @@ export default function AddScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
           <View style={styles.kindRow}>
             <Pressable
               onPress={() => onKindChange('expense')}
-              style={[
+              style={({ pressed }) => [
                 styles.kindBtn,
                 { borderColor: colors.border, backgroundColor: colors.card },
                 entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
+                pressed && { opacity: 0.92 },
               ]}
             >
               <Text
                 style={[
-                  styles.kindText,
+                  typeStyles.bodySmall,
                   { color: colors.text },
                   entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
                 ]}
@@ -185,15 +182,16 @@ export default function AddScreen() {
             </Pressable>
             <Pressable
               onPress={() => onKindChange('income')}
-              style={[
+              style={({ pressed }) => [
                 styles.kindBtn,
                 { borderColor: colors.border, backgroundColor: colors.card },
                 entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
+                pressed && { opacity: 0.92 },
               ]}
             >
               <Text
                 style={[
-                  styles.kindText,
+                  typeStyles.bodySmall,
                   { color: colors.text },
                   entryKind === 'income' && { color: colors.income, fontWeight: '700' },
                 ]}
@@ -204,29 +202,36 @@ export default function AddScreen() {
           </View>
 
           {entryKind === 'expense' ? (
-            <>
-              <Pressable
-                onPress={() => setSplitMode((s) => !s)}
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setSplitMode((s) => !s);
+              }}
+              style={({ pressed }) => [
+                styles.splitToggle,
+                surfaceCard(colors, false),
+                splitMode && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.splitToggle,
-                  { borderColor: colors.border, backgroundColor: colors.card },
-                  splitMode && { borderColor: colors.accent, backgroundColor: colors.accentMuted },
+                  typeStyles.bodySmall,
+                  { color: splitMode ? colors.accent : colors.textSecondary, fontWeight: '600', textAlign: 'center' },
                 ]}
               >
-                <Text style={[styles.splitToggleText, { color: splitMode ? colors.accent : colors.textSecondary }]}>
-                  {splitMode ? 'Split payment (multiple categories)' : 'Single category — tap for split'}
-                </Text>
-              </Pressable>
-            </>
+                {splitMode ? 'Split payment (multiple categories)' : 'Single category — tap for split'}
+              </Text>
+            </Pressable>
           ) : null}
 
           {entryKind === 'expense' && splitMode ? (
             <>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Lines</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Lines</Text>
               {splitLines.map((line, idx) => (
-                <View key={idx} style={[styles.splitBlock, { borderColor: colors.border }]}>
+                <View key={idx} style={[styles.splitBlock, surfaceCard(colors, false)]}>
                   <View style={styles.splitHead}>
-                    <Text style={[styles.splitIdx, { color: colors.textMuted }]}>#{idx + 1}</Text>
+                    <Text style={[typeStyles.captionMedium, { color: colors.textMuted }]}>#{idx + 1}</Text>
                     {splitLines.length > 2 ? (
                       <Pressable
                         onPress={() => setSplitLines((rows) => rows.filter((_, i) => i !== idx))}
@@ -236,12 +241,11 @@ export default function AddScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                  <Text style={[styles.miniLabel, { color: colors.textSecondary }]}>Amount</Text>
+                  <Text style={[typeStyles.captionMedium, { color: colors.textSecondary, marginBottom: space[1] / 2 }]}>
+                    Amount
+                  </Text>
                   <TextInput
-                    style={[
-                      styles.input,
-                      { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
-                    ]}
+                    style={[styles.input, surfaceCard(colors, false), { color: colors.text }]}
                     placeholder="0.00"
                     placeholderTextColor={colors.textMuted}
                     keyboardType="decimal-pad"
@@ -250,25 +254,29 @@ export default function AddScreen() {
                       setSplitLines((rows) => rows.map((r, i) => (i === idx ? { ...r, amount: t } : r)))
                     }
                   />
-                  <Text style={[styles.miniLabel, { color: colors.textSecondary }]}>Category</Text>
+                  <Text style={[typeStyles.captionMedium, { color: colors.textSecondary, marginBottom: space[1] / 2 }]}>
+                    Category
+                  </Text>
                   <View style={styles.chips}>
                     {expenseCategoryOptions.map((c) => {
                       const active = c === line.category;
                       return (
                         <Pressable
                           key={`${idx}-${c}`}
-                          onPress={() =>
-                            setSplitLines((rows) => rows.map((r, i) => (i === idx ? { ...r, category: c } : r)))
-                          }
-                          style={[
+                          onPress={() => {
+                            void hapticLight();
+                            setSplitLines((rows) => rows.map((r, i) => (i === idx ? { ...r, category: c } : r)));
+                          }}
+                          style={({ pressed }) => [
                             styles.chip,
-                            { borderColor: colors.border, backgroundColor: colors.card },
+                            surfaceCard(colors, false),
                             active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                            pressed && { opacity: 0.88 },
                           ]}
                         >
                           <Text
                             style={[
-                              styles.chipText,
+                              typeStyles.bodySmall,
                               { color: colors.textSecondary },
                               active && { color: colors.accent, fontWeight: '700' },
                             ]}
@@ -282,25 +290,26 @@ export default function AddScreen() {
                 </View>
               ))}
               <Pressable
-                onPress={() =>
-                  setSplitLines((rows) => [...rows, { category: expenseCategoryOptions[0] ?? 'Other', amount: '' }])
-                }
-                style={[styles.addLineBtn, { borderColor: colors.accent }]}
+                onPress={() => {
+                  void hapticLight();
+                  setSplitLines((rows) => [
+                    ...rows,
+                    { category: expenseCategoryOptions[0] ?? 'Other', amount: '' },
+                  ]);
+                }}
+                style={({ pressed }) => [styles.addLineBtn, { borderColor: colors.accent }, pressed && { opacity: 0.88 }]}
               >
                 <Text style={{ color: colors.accent, fontWeight: '600' }}>+ Add category line</Text>
               </Pressable>
-              <Text style={[styles.splitSum, { color: colors.textMuted }]}>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: space[1] }]}>
                 Sum: {splitTotal.toFixed(2)} (one payment, several categories)
               </Text>
             </>
           ) : (
             <>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Amount</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
-                ]}
+                style={[styles.input, surfaceCard(colors, false), { color: colors.text }]}
                 placeholder="0.00"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="decimal-pad"
@@ -308,23 +317,27 @@ export default function AddScreen() {
                 onChangeText={setAmount}
               />
 
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
               <View style={styles.chips}>
                 {categories.map((c) => {
                   const active = c === category;
                   return (
                     <Pressable
                       key={c}
-                      onPress={() => setCategory(c)}
-                      style={[
+                      onPress={() => {
+                        void hapticLight();
+                        setCategory(c);
+                      }}
+                      style={({ pressed }) => [
                         styles.chip,
-                        { borderColor: colors.border, backgroundColor: colors.card },
+                        surfaceCard(colors, false),
                         active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.chipText,
+                          typeStyles.bodySmall,
                           { color: colors.textSecondary },
                           active && { color: colors.accent, fontWeight: '700' },
                         ]}
@@ -338,11 +351,66 @@ export default function AddScreen() {
             </>
           )}
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Account</Text>
+          <View style={styles.chips}>
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setAccountId(null);
+              }}
+              style={({ pressed }) => [
+                styles.chip,
+                surfaceCard(colors, false),
+                accountId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Text
+                style={[
+                  typeStyles.bodySmall,
+                  { color: colors.textSecondary },
+                  accountId === null && { color: colors.accent, fontWeight: '700' },
+                ]}
+              >
+                Unspecified
+              </Text>
+            </Pressable>
+            {accounts.map((a) => {
+              const active = accountId === a.id;
+              return (
+                <Pressable
+                  key={a.id}
+                  onPress={() => {
+                    void hapticLight();
+                    setAccountId(a.id);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    surfaceCard(colors, false),
+                    active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typeStyles.bodySmall,
+                      { color: colors.textSecondary },
+                      active && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {a.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="e.g. Business, Trip"
             placeholderTextColor={colors.textMuted}
@@ -350,11 +418,12 @@ export default function AddScreen() {
             onChangeText={setTag}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Date</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Date</Text>
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="YYYY-MM-DD"
             placeholderTextColor={colors.textMuted}
@@ -362,12 +431,13 @@ export default function AddScreen() {
             onChangeText={setDate}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
           <TextInput
             style={[
               styles.input,
               styles.noteInput,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="Details"
             placeholderTextColor={colors.textMuted}
@@ -377,16 +447,22 @@ export default function AddScreen() {
           />
 
           {entryKind === 'expense' ? (
-            <View style={[styles.receiptCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.label, { color: colors.text, marginTop: 0 }]}>Receipt (optional)</Text>
-              <Text style={[styles.receiptPrivacy, { color: colors.textMuted }]}>
-                Stored only on this device in app storage (not uploaded). Photos are limited to {receiptSizeLimitLabel()}{' '}
-                each. Remove by deleting the expense.
+            <View style={[styles.receiptCard, surfaceCard(colors, false)]}>
+              <Text style={[typeStyles.bodyMedium, { color: colors.text, marginBottom: space[1] }]}>
+                Receipt (optional)
               </Text>
-              <View style={styles.receiptRow}>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: space[2] }]}>
+                Stored only on this device. Max {receiptSizeLimitLabel()} per photo. Not included in JSON backup bytes
+                (only the file path).
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
                 <Pressable
                   onPress={() => void onPickReceipt()}
-                  style={[styles.receiptBtn, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}
+                  style={({ pressed }) => [
+                    styles.receiptBtn,
+                    { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
                 >
                   <Text style={{ color: colors.accent, fontWeight: '600' }}>
                     {receiptUri ? 'Change photo' : 'Attach photo'}
@@ -398,19 +474,15 @@ export default function AddScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              {receiptUri ? (
-                <Text style={[styles.receiptPath, { color: colors.textMuted }]} numberOfLines={2}>
-                  Saved locally
-                </Text>
-              ) : null}
             </View>
           ) : null}
 
           <Pressable
-            style={[
+            style={({ pressed }) => [
               styles.saveBtn,
               { backgroundColor: colors.accent },
               saving && { opacity: 0.7 },
+              pressed && !saving && { opacity: 0.92 },
             ]}
             onPress={() => void onSave()}
             disabled={saving}
@@ -426,35 +498,33 @@ export default function AddScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 40 },
-  label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 4 },
-  miniLabel: { fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  kindRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  scroll: { padding: space[3], paddingBottom: space[5] },
+  label: { marginBottom: space[1], marginTop: space[1] / 2 },
+  kindRow: { flexDirection: 'row', gap: space[1] + 4, marginBottom: space[2] },
   kindBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: space[2] - 2,
+    borderRadius: radii.lg - 2,
     borderWidth: 2,
     alignItems: 'center',
   },
-  kindText: { fontSize: 16 },
-  splitToggle: { padding: 14, borderRadius: 12, borderWidth: 1, marginBottom: 16 },
-  splitToggleText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  splitBlock: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12 },
-  splitHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  splitIdx: { fontWeight: '700' },
-  addLineBtn: { alignSelf: 'flex-start', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
-  splitSum: { fontSize: 13, marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 16 },
+  input: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 4,
+    fontSize: 16,
+    marginBottom: space[2],
+  },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 14 },
-  receiptCard: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 16 },
-  receiptPrivacy: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
-  receiptRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  receiptBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1 },
-  receiptPath: { fontSize: 12, marginTop: 8 },
-  saveBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
+  chip: { paddingHorizontal: space[2] - 2, paddingVertical: space[1], borderRadius: radii.pill, borderWidth: 1 },
+  splitToggle: { padding: space[2] - 2, borderRadius: radii.md, borderWidth: 1, marginBottom: space[2] },
+  splitBlock: { padding: space[2] - 2, marginBottom: space[2], borderWidth: 1, borderRadius: radii.lg },
+  splitHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: space[1] },
+  addLineBtn: { alignSelf: 'flex-start', paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1, marginBottom: space[1] },
+  receiptCard: { padding: space[2], marginBottom: space[2], borderWidth: 1, borderRadius: radii.lg },
+  receiptBtn: { paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1 },
+  saveBtn: { borderRadius: radii.lg - 2, paddingVertical: space[2], alignItems: 'center', marginTop: space[1] },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
