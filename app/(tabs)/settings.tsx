@@ -206,7 +206,10 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Currency</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="cash-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Currency</Text>
+          </View>
           <View style={styles.chips}>
             {COMMON_CURRENCIES.map((c) => {
               const active = settings.currency === c;
@@ -240,7 +243,10 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>Accounts & wallets</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Accounts & wallets</Text>
+          </View>
           <Text style={[styles.backupHint, { color: colors.textMuted }]}>
             Label cash, cards, or bank accounts. Used when adding and editing transactions (like Budge multi-account
             views).
@@ -336,7 +342,10 @@ export default function SettingsScreen() {
         </Pressable>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Full backup (JSON)</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="cloud-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Full backup (JSON)</Text>
+          </View>
           <Text style={[typeStyles.bodySmall, styles.backupHint, { color: colors.textMuted }]}>
             Includes transactions, budgets, savings goals, custom categories, and app settings. Use import on a new
             device to restore.
@@ -378,7 +387,10 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom expense categories</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="pricetags-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom expense categories</Text>
+          </View>
           <View style={styles.addRow}>
             <TextInput
               style={[
@@ -428,7 +440,10 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom income categories</Text>
+          <View style={styles.titleRow}>
+            <Ionicons name="pricetag-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom income categories</Text>
+          </View>
           <View style={styles.addRow}>
             <TextInput
               style={[
@@ -491,6 +506,7 @@ const styles = StyleSheet.create({
   loadingHint: { marginTop: space[1] + 4 },
   scroll: { padding: space[3], paddingBottom: space[5] },
   card: { padding: space[2], marginBottom: space[2] },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   cardTitle: { marginBottom: space[2] - 4 },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1] },
   segBtn: { paddingHorizontal: space[2] - 2, paddingVertical: space[1] + 2, borderRadius: radii.md, borderWidth: 1 },

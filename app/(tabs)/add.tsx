@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
@@ -448,9 +449,10 @@ export default function AddScreen() {
 
           {entryKind === 'expense' ? (
             <View style={[styles.receiptCard, surfaceCard(colors, false)]}>
-              <Text style={[typeStyles.bodyMedium, { color: colors.text, marginBottom: space[1] }]}>
-                Receipt (optional)
-              </Text>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="receipt-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>Receipt (optional)</Text>
+              </View>
               <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: space[2] }]}>
                 Stored only on this device. Max {receiptSizeLimitLabel()} per photo. Not included in JSON backup bytes
                 (only the file path).
@@ -524,6 +526,7 @@ const styles = StyleSheet.create({
   splitHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: space[1] },
   addLineBtn: { alignSelf: 'flex-start', paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1, marginBottom: space[1] },
   receiptCard: { padding: space[2], marginBottom: space[2], borderWidth: 1, borderRadius: radii.lg },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1], marginBottom: space[1] },
   receiptBtn: { paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1 },
   saveBtn: { borderRadius: radii.lg - 2, paddingVertical: space[2], alignItems: 'center', marginTop: space[1] },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
