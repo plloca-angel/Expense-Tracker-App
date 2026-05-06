@@ -20,7 +20,7 @@ export function HeaderTitleWithSubtitle({ title, subtitle, colors }: Props) {
       <View style={styles.titleRow}>
         {title === 'Overview' ? (
           <View style={styles.logoWrap}>
-            <AppLogo size={18} />
+            <AppLogo size={22} />
           </View>
         ) : null}
         <Text style={[typeStyles.title, { color: colors.text }]} numberOfLines={1}>
@@ -40,5 +40,5 @@ const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center', maxWidth: 280 },
   wrapAndroid: { alignItems: 'flex-start' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoWrap: { marginTop: 1 },
+  logoWrap: { marginTop: 0 },
 });
