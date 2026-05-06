@@ -12,9 +12,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { EmptyStateCard } from '../../src/components/EmptyStateCard';
 import { useFinance } from '../../src/context/FinanceContext';
+import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { hapticLight, hapticSuccess, hapticWarning } from '../../src/lib/haptics';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
 import { formatMoney, parseAmount } from '../../src/lib/money';
+import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 type TabMode = 'budgets' | 'goals' | 'recurring';
 
@@ -56,6 +60,14 @@ export default function BudgetsScreen() {
   const [recNote, setRecNote] = useState('');
   const [recAccountId, setRecAccountId] = useState<number | null>(null);
 
+  const plansSubtitle =
+    mode === 'budgets'
+      ? 'Monthly limits by category'
+      : mode === 'goals'
+        ? 'Manual savings targets'
+        : 'Scheduled bills & income';
+  useTabHeaderSubtitle('Plans', plansSubtitle, colors);
+
   useEffect(() => {
     const first = expenseCategoryOptions[0] ?? 'Other';
     if (!expenseCategoryOptions.includes(category)) setCategory(first);
@@ -91,6 +103,7 @@ export default function BudgetsScreen() {
     }
     void (async () => {
       await upsertBudget(category, lim);
+      void hapticSuccess();
       setLimitStr('');
     })();
   };
@@ -113,6 +126,7 @@ export default function BudgetsScreen() {
     }
     void (async () => {
       await addGoal({ name, targetAmount: t, deadline: dl || null });
+      void hapticSuccess();
       setGoalName('');
       setGoalTarget('');
       setGoalDeadline('');
@@ -122,7 +136,14 @@ export default function BudgetsScreen() {
   const confirmRemoveBudget = (id: number, cat: string) => {
     Alert.alert('Remove budget', `Stop tracking budget for ${cat}?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void removeBudget(id) },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          void removeBudget(id).then(() => {
+            void hapticWarning();
+          }),
+      },
     ]);
   };
 
@@ -152,6 +173,7 @@ export default function BudgetsScreen() {
         accountId: recAccountId,
         note: recNote.trim() || null,
       });
+      void hapticSuccess();
       setRecTitle('');
       setRecAmount('');
       setRecDay('1');
@@ -170,7 +192,14 @@ export default function BudgetsScreen() {
   const confirmRemoveGoal = (id: number, name: string) => {
     Alert.alert('Remove goal', `Delete “${name}”?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void removeGoal(id) },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          void removeGoal(id).then(() => {
+            void hapticWarning();
+          }),
+      },
     ]);
   };
 
@@ -181,7 +210,9 @@ export default function BudgetsScreen() {
       Alert.alert('Invalid amount');
       return;
     }
-    void updateGoalSaved(id, Math.round(n * 100) / 100);
+    void updateGoalSaved(id, Math.round(n * 100) / 100).then(() => {
+      void hapticSuccess();
+    });
   };
 
   const onRefresh = async () => {
@@ -197,6 +228,9 @@ export default function BudgetsScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.accent} />
+        <Text style={[typeStyles.body, styles.loadingHint, { color: colors.textMuted }]}>
+          Loading plans…
+        </Text>
       </View>
     );
   }
@@ -213,16 +247,20 @@ export default function BudgetsScreen() {
         ).map(([key, label]) => (
           <Pressable
             key={key}
-            onPress={() => setMode(key)}
-            style={[
+            onPress={() => {
+              void hapticLight();
+              setMode(key);
+            }}
+            style={({ pressed }) => [
               styles.modeBtn,
-              { borderColor: colors.border, backgroundColor: colors.card },
+              surfaceCard(colors, false),
               mode === key && { backgroundColor: colors.accent, borderColor: colors.accent },
+              pressed && { opacity: 0.9 },
             ]}
           >
             <Text
               style={[
-                styles.modeBtnText,
+                typeStyles.bodySmall,
                 { color: colors.textSecondary },
                 mode === key && { color: '#fff', fontWeight: '700' },
               ]}
@@ -242,29 +280,33 @@ export default function BudgetsScreen() {
       >
         {mode === 'budgets' ? (
           <>
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
+            <Text style={[typeStyles.bodySmall, styles.hint, { color: colors.textMuted }]}>
               Monthly cap per category. Progress uses expenses in {ym}.
             </Text>
 
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>Add or update budget</Text>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+            <View style={[styles.card, surfaceCard(colors, true)]}>
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Add or update budget</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
               <View style={styles.chips}>
                 {expenseCategoryOptions.map((c) => {
                   const active = c === category;
                   return (
                     <Pressable
                       key={c}
-                      onPress={() => setCategory(c)}
-                      style={[
+                      onPress={() => {
+                        void hapticLight();
+                        setCategory(c);
+                      }}
+                      style={({ pressed }) => [
                         styles.chip,
                         { borderColor: colors.border, backgroundColor: colors.bg },
                         active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.chipText,
+                          typeStyles.captionMedium,
                           { color: colors.textSecondary },
                           active && { color: colors.accent, fontWeight: '700' },
                         ]}
@@ -275,7 +317,9 @@ export default function BudgetsScreen() {
                   );
                 })}
               </View>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Monthly limit</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Monthly limit
+              </Text>
               <TextInput
                 style={[
                   styles.input,
@@ -287,24 +331,38 @@ export default function BudgetsScreen() {
                 value={limitStr}
                 onChangeText={setLimitStr}
               />
-              <Pressable style={[styles.btn, { backgroundColor: colors.accent }]} onPress={addBudget}>
+              <Pressable
+                style={({ pressed }) => [styles.btn, { backgroundColor: colors.accent }, pressed && { opacity: 0.9 }]}
+                onPress={addBudget}
+              >
                 <Text style={styles.btnText}>Save budget</Text>
               </Pressable>
             </View>
 
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Active budgets</Text>
+            <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>Active budgets</Text>
             {rows.length === 0 ? (
-              <Text style={[styles.empty, { color: colors.textMuted }]}>No budgets yet.</Text>
+              <EmptyStateCard
+                colors={colors}
+                title="No budgets yet"
+                description={`Set a monthly limit for a category. Spending in ${ym} counts toward each cap.`}
+                icon={<Ionicons name="pie-chart-outline" size={36} color={colors.textMuted} />}
+              />
             ) : (
               rows.map((b) => (
-                <View key={b.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View key={b.id} style={[styles.row, surfaceCard(colors, true)]}>
                   <View style={styles.rowTop}>
-                    <Text style={[styles.cat, { color: colors.text }]}>{b.category}</Text>
-                    <Pressable onPress={() => confirmRemoveBudget(b.id, b.category)} hitSlop={8}>
+                    <Text style={[typeStyles.title, { color: colors.text }]}>{b.category}</Text>
+                    <Pressable
+                      onPress={() => confirmRemoveBudget(b.id, b.category)}
+                      hitSlop={12}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove budget for ${b.category}`}
+                      style={({ pressed }) => [styles.iconHit, pressed && { opacity: 0.65 }]}
+                    >
                       <Ionicons name="close-circle-outline" size={24} color={colors.textMuted} />
                     </Pressable>
                   </View>
-                  <Text style={[styles.nums, { color: colors.textMuted }]}>
+                  <Text style={[typeStyles.bodySmall, styles.nums, { color: colors.textMuted }]}>
                     {formatMoney(b.used, settings.currency)} of {formatMoney(b.monthlyLimit, settings.currency)}
                   </Text>
                   <View style={[styles.track, { backgroundColor: colors.bgElevated }]}>
@@ -321,13 +379,13 @@ export default function BudgetsScreen() {
           </>
         ) : mode === 'goals' ? (
           <>
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
+            <Text style={[typeStyles.bodySmall, styles.hint, { color: colors.textMuted }]}>
               Track savings targets. Update “saved so far” as you set money aside (manual progress).
             </Text>
 
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>New goal</Text>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
+            <View style={[styles.card, surfaceCard(colors, true)]}>
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New goal</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Name</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -338,7 +396,7 @@ export default function BudgetsScreen() {
                 value={goalName}
                 onChangeText={setGoalName}
               />
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Target amount</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Target amount</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -350,7 +408,9 @@ export default function BudgetsScreen() {
                 value={goalTarget}
                 onChangeText={setGoalTarget}
               />
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Deadline (optional)</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Deadline (optional)
+              </Text>
               <TextInput
                 style={[
                   styles.input,
@@ -361,27 +421,43 @@ export default function BudgetsScreen() {
                 value={goalDeadline}
                 onChangeText={setGoalDeadline}
               />
-              <Pressable style={[styles.btn, { backgroundColor: colors.income }]} onPress={addSavingsGoal}>
+              <Pressable
+                style={({ pressed }) => [styles.btn, { backgroundColor: colors.income }, pressed && { opacity: 0.9 }]}
+                onPress={addSavingsGoal}
+              >
                 <Text style={styles.btnText}>Add goal</Text>
               </Pressable>
             </View>
 
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Your goals</Text>
+            <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>Your goals</Text>
             {goals.length === 0 ? (
-              <Text style={[styles.empty, { color: colors.textMuted }]}>No savings goals yet.</Text>
+              <EmptyStateCard
+                colors={colors}
+                title="No savings goals yet"
+                description="Create a target and update saved progress as you set money aside."
+                icon={<Ionicons name="flag-outline" size={36} color={colors.textMuted} />}
+              />
             ) : (
               goals.map((g) => {
                 const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
                 return (
-                  <View key={g.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View key={g.id} style={[styles.row, surfaceCard(colors, true)]}>
                     <View style={styles.rowTop}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.cat, { color: colors.text }]}>{g.name}</Text>
+                        <Text style={[typeStyles.title, { color: colors.text }]}>{g.name}</Text>
                         {g.deadline ? (
-                          <Text style={[styles.deadline, { color: colors.textMuted }]}>By {g.deadline}</Text>
+                          <Text style={[typeStyles.caption, styles.deadline, { color: colors.textMuted }]}>
+                            By {g.deadline}
+                          </Text>
                         ) : null}
                       </View>
-                      <Pressable onPress={() => confirmRemoveGoal(g.id, g.name)} hitSlop={8}>
+                      <Pressable
+                        onPress={() => confirmRemoveGoal(g.id, g.name)}
+                        hitSlop={12}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete goal ${g.name}`}
+                        style={({ pressed }) => [styles.iconHit, pressed && { opacity: 0.65 }]}
+                      >
                         <Ionicons name="trash-outline" size={22} color={colors.danger} />
                       </Pressable>
                     </View>
@@ -390,10 +466,18 @@ export default function BudgetsScreen() {
                         style={[styles.fill, { width: `${pct}%`, backgroundColor: colors.income }]}
                       />
                     </View>
-                    <Text style={[styles.nums, { color: colors.textMuted }]}>
+                    <Text style={[typeStyles.bodySmall, styles.nums, { color: colors.textMuted }]}>
                       {formatMoney(g.savedAmount, settings.currency)} / {formatMoney(g.targetAmount, settings.currency)}
                     </Text>
-                    <Text style={[styles.label, { color: colors.textSecondary, marginTop: 10 }]}>Saved amount</Text>
+                    <Text
+                      style={[
+                        typeStyles.captionMedium,
+                        styles.label,
+                        { color: colors.textSecondary, marginTop: space[1] + 2 },
+                      ]}
+                    >
+                      Saved amount
+                    </Text>
                     <View style={styles.savedRow}>
                       <TextInput
                         style={[
@@ -405,7 +489,11 @@ export default function BudgetsScreen() {
                         onChangeText={(t) => setSavedDrafts((prev) => ({ ...prev, [g.id]: t }))}
                       />
                       <Pressable
-                        style={[styles.applyBtn, { backgroundColor: colors.accent }]}
+                        style={({ pressed }) => [
+                          styles.applyBtn,
+                          { backgroundColor: colors.accent },
+                          pressed && { opacity: 0.9 },
+                        ]}
                         onPress={() => applySaved(g.id)}
                       >
                         <Text style={styles.applyBtnText}>Apply</Text>
@@ -418,19 +506,23 @@ export default function BudgetsScreen() {
           </>
         ) : (
           <>
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
+            <Text style={[typeStyles.bodySmall, styles.hint, { color: colors.textMuted }]}>
               Bills and subscriptions (Budge-style). Post creates real transactions for {ym} when not already posted.
             </Text>
             <Pressable
-              style={[styles.btn, { backgroundColor: colors.income, marginBottom: 16 }]}
+              style={({ pressed }) => [
+                styles.btn,
+                { backgroundColor: colors.income, marginBottom: space[2] },
+                pressed && { opacity: 0.92 },
+              ]}
               onPress={postRecurring}
             >
               <Text style={styles.btnText}>Post due items for {ym}</Text>
             </Pressable>
 
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>New recurring</Text>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
+            <View style={[styles.card, surfaceCard(colors, true)]}>
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New recurring</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Name</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -441,21 +533,25 @@ export default function BudgetsScreen() {
                 value={recTitle}
                 onChangeText={setRecTitle}
               />
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
               <View style={styles.recKindRow}>
                 {(['expense', 'income'] as const).map((k) => (
                   <Pressable
                     key={k}
-                    onPress={() => setRecKind(k)}
-                    style={[
-                      styles.modeBtn,
+                    onPress={() => {
+                      void hapticLight();
+                      setRecKind(k);
+                    }}
+                    style={({ pressed }) => [
+                      styles.recKindBtn,
                       { borderColor: colors.border, backgroundColor: colors.bg },
                       recKind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
+                      pressed && { opacity: 0.9 },
                     ]}
                   >
                     <Text
                       style={[
-                        styles.modeBtnText,
+                        typeStyles.bodySmall,
                         { color: colors.textSecondary },
                         recKind === k && { color: '#fff', fontWeight: '700' },
                       ]}
@@ -465,7 +561,7 @@ export default function BudgetsScreen() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Amount</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -475,23 +571,27 @@ export default function BudgetsScreen() {
                 value={recAmount}
                 onChangeText={setRecAmount}
               />
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
               <View style={styles.chips}>
                 {(recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions).map((c) => {
                   const active = c === recCategory;
                   return (
                     <Pressable
                       key={c}
-                      onPress={() => setRecCategory(c)}
-                      style={[
+                      onPress={() => {
+                        void hapticLight();
+                        setRecCategory(c);
+                      }}
+                      style={({ pressed }) => [
                         styles.chip,
                         { borderColor: colors.border, backgroundColor: colors.bg },
                         active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.chipText,
+                          typeStyles.captionMedium,
                           { color: colors.textSecondary },
                           active && { color: colors.accent, fontWeight: '700' },
                         ]}
@@ -502,7 +602,9 @@ export default function BudgetsScreen() {
                   );
                 })}
               </View>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Day of month (1–28)</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Day of month (1–28)
+              </Text>
               <TextInput
                 style={[
                   styles.input,
@@ -512,19 +614,25 @@ export default function BudgetsScreen() {
                 value={recDay}
                 onChangeText={setRecDay}
               />
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Account (optional)</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Account (optional)
+              </Text>
               <View style={styles.chips}>
                 <Pressable
-                  onPress={() => setRecAccountId(null)}
-                  style={[
+                  onPress={() => {
+                    void hapticLight();
+                    setRecAccountId(null);
+                  }}
+                  style={({ pressed }) => [
                     styles.chip,
                     { borderColor: colors.border, backgroundColor: colors.bg },
                     recAccountId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.chipText,
+                      typeStyles.captionMedium,
                       { color: colors.textSecondary },
                       recAccountId === null && { color: colors.accent, fontWeight: '700' },
                     ]}
@@ -537,16 +645,20 @@ export default function BudgetsScreen() {
                   return (
                     <Pressable
                       key={a.id}
-                      onPress={() => setRecAccountId(a.id)}
-                      style={[
+                      onPress={() => {
+                        void hapticLight();
+                        setRecAccountId(a.id);
+                      }}
+                      style={({ pressed }) => [
                         styles.chip,
                         { borderColor: colors.border, backgroundColor: colors.bg },
                         active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.chipText,
+                          typeStyles.captionMedium,
                           { color: colors.textSecondary },
                           active && { color: colors.accent, fontWeight: '700' },
                         ]}
@@ -557,7 +669,9 @@ export default function BudgetsScreen() {
                   );
                 })}
               </View>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Note (optional)
+              </Text>
               <TextInput
                 style={[
                   styles.input,
@@ -566,27 +680,43 @@ export default function BudgetsScreen() {
                 value={recNote}
                 onChangeText={setRecNote}
               />
-              <Pressable style={[styles.btn, { backgroundColor: colors.accent }]} onPress={addRecurringItem}>
+              <Pressable
+                style={({ pressed }) => [styles.btn, { backgroundColor: colors.accent }, pressed && { opacity: 0.92 }]}
+                onPress={addRecurringItem}
+              >
                 <Text style={styles.btnText}>Save recurring</Text>
               </Pressable>
             </View>
 
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Active recurring</Text>
+            <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>
+              Active recurring
+            </Text>
             {recurringItems.length === 0 ? (
-              <Text style={[styles.empty, { color: colors.textMuted }]}>None yet.</Text>
+              <EmptyStateCard
+                colors={colors}
+                title="No recurring items yet"
+                description="Add rent, subscriptions, or transfers. Post due items to create transactions for this month."
+                icon={<Ionicons name="repeat-outline" size={36} color={colors.textMuted} />}
+              />
             ) : (
               recurringItems.map((r) => (
-                <View key={r.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View key={r.id} style={[styles.row, surfaceCard(colors, true)]}>
                   <View style={styles.rowTop}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.cat, { color: colors.text }]}>{r.title}</Text>
-                      <Text style={[styles.nums, { color: colors.textMuted }]}>
+                      <Text style={[typeStyles.title, { color: colors.text }]}>{r.title}</Text>
+                      <Text style={[typeStyles.bodySmall, styles.nums, { color: colors.textMuted }]}>
                         {formatMoney(r.amount, settings.currency)} · {r.category} · day {r.dayOfMonth} ·{' '}
                         {r.kind}
                         {r.lastPostedYm ? ` · last posted ${r.lastPostedYm}` : ''}
                       </Text>
                     </View>
-                    <Pressable onPress={() => void removeRecurring(r.id)} hitSlop={8}>
+                    <Pressable
+                      onPress={() => void removeRecurring(r.id)}
+                      hitSlop={12}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete recurring ${r.title}`}
+                      style={({ pressed }) => [styles.iconHit, pressed && { opacity: 0.65 }]}
+                    >
                       <Ionicons name="trash-outline" size={22} color={colors.danger} />
                     </Pressable>
                   </View>
@@ -603,39 +733,51 @@ export default function BudgetsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  modeRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 8, gap: 10 },
-  recKindRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  modeBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  modeBtnText: { fontSize: 14 },
-  scroll: { padding: 20, paddingBottom: 40 },
-  hint: { fontSize: 14, lineHeight: 20, marginBottom: 16 },
-  card: { borderRadius: 16, padding: 18, marginBottom: 20, borderWidth: 1 },
-  cardTitle: { fontSize: 17, fontWeight: '600', marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 13 },
+  loadingHint: { marginTop: space[1] + 4 },
+  modeRow: { flexDirection: 'row', paddingHorizontal: space[2], paddingTop: space[1], gap: space[1] + 2 },
+  modeBtn: { flex: 1, paddingVertical: space[1] + 4, borderRadius: radii.md, alignItems: 'center' },
+  recKindRow: { flexDirection: 'row', gap: space[1] + 2, marginBottom: space[1] / 2 },
+  recKindBtn: {
+    flex: 1,
+    paddingVertical: space[1] + 4,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  scroll: { padding: space[3], paddingBottom: space[5] },
+  hint: { marginBottom: space[2] },
+  card: { padding: space[2], marginBottom: space[3] - 4 },
+  cardTitle: { marginBottom: space[1] + 4 },
+  label: { marginBottom: space[1] },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] - 2 },
+  chip: { paddingHorizontal: space[1] + 4, paddingVertical: space[1], borderRadius: radii.pill, borderWidth: 1 },
   input: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 4,
     fontSize: 16,
-    marginBottom: 14,
+    marginBottom: space[2] - 2,
   },
-  btn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  btn: { borderRadius: radii.md, paddingVertical: space[2] - 2, alignItems: 'center' },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
-  empty: { fontSize: 15 },
-  row: { borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1 },
+  sectionTitle: { marginBottom: space[1] + 4 },
+  row: { borderRadius: radii.lg - 2, padding: space[2], marginBottom: space[1] + 4 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cat: { fontSize: 17, fontWeight: '700' },
-  deadline: { fontSize: 13, marginTop: 4 },
-  nums: { fontSize: 14, marginTop: 6 },
-  track: { height: 8, borderRadius: 4, marginTop: 10, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 4 },
-  savedRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  savedInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  applyBtn: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
+  deadline: { marginTop: space[1] / 2 },
+  nums: { marginTop: space[1] - 2 },
+  track: { height: space[1], borderRadius: radii.sm / 2, marginTop: space[1] + 2, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: radii.sm / 2 },
+  savedRow: { flexDirection: 'row', gap: space[1] + 2, alignItems: 'center' },
+  savedInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[1] + 4,
+    paddingVertical: space[1] + 2,
+    fontSize: 16,
+  },
+  applyBtn: { paddingHorizontal: space[2] + 2, paddingVertical: space[1] + 4, borderRadius: radii.md },
   applyBtnText: { color: '#fff', fontWeight: '700' },
+  iconHit: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
 });
