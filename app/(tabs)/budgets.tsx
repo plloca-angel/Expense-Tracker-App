@@ -48,6 +48,8 @@ export default function BudgetsScreen() {
     removeRecurring,
     postRecurringForMonth,
     refresh,
+    getRawSetting,
+    setRawSetting,
   } = useFinance();
   const [mode, setMode] = useState<TabMode>('budgets');
   const [category, setCategory] = useState<string>(expenseCategoryOptions[0] ?? 'Other');
@@ -58,6 +60,7 @@ export default function BudgetsScreen() {
   const [goalPickerOpen, setGoalPickerOpen] = useState(false);
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [rolloverEnabled, setRolloverEnabled] = useState(false);
   const [recTitle, setRecTitle] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recCategory, setRecCategory] = useState<string>(expenseCategoryOptions[0] ?? 'Other');
@@ -91,13 +94,26 @@ export default function BudgetsScreen() {
     setSavedDrafts(next);
   }, [goals]);
 
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const raw = await getRawSetting('budgets_rollover');
+      if (!alive) return;
+      setRolloverEnabled(raw === '1');
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [getRawSetting]);
+
   const ym = currentMonthPrefix();
   const rows = useMemo(() => {
     const monthExp = expensesInMonth(expenses, ym);
     return budgets.map((b) => {
       const used = monthExp.filter((e) => e.category === b.category).reduce((s, e) => s + e.amount, 0);
       const pct = b.monthlyLimit > 0 ? Math.min(100, (used / b.monthlyLimit) * 100) : 0;
-      return { ...b, used, pct, over: used > b.monthlyLimit };
+      const warn = b.monthlyLimit > 0 && used / b.monthlyLimit >= 0.8 && used <= b.monthlyLimit;
+      return { ...b, used, pct, over: used > b.monthlyLimit, warn };
     });
   }, [budgets, expenses, ym]);
 
@@ -292,6 +308,35 @@ export default function BudgetsScreen() {
               Monthly cap per category. Progress uses expenses in {ym}.
             </Text>
 
+            <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Budget options">
+              <View style={styles.titleRow}>
+                <Ionicons name="options-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Options</Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setRolloverEnabled((v) => !v);
+                  void setRawSetting('budgets_rollover', rolloverEnabled ? '0' : '1');
+                }}
+                style={({ pressed }) => [
+                  styles.optionRow,
+                  { borderColor: colors.border },
+                  pressed && { opacity: 0.9 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle budget rollover"
+              >
+                <Ionicons name={rolloverEnabled ? 'checkbox' : 'square-outline'} size={20} color={colors.accent} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>Rollover budgets</Text>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                    If enabled, we’ll show rollover-aware hints (calculation upgrade next).
+                  </Text>
+                </View>
+              </Pressable>
+            </PressableCard>
+
             <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Add or update budget">
               <View style={styles.titleRow}>
                 <Ionicons name="pie-chart-outline" size={18} color={colors.textMuted} />
@@ -391,6 +436,15 @@ export default function BudgetsScreen() {
                       ]}
                     />
                   </View>
+                  {b.over ? (
+                    <Text style={[typeStyles.captionMedium, { color: colors.expense, marginTop: space[1], fontWeight: '700' }]}>
+                      Over budget
+                    </Text>
+                  ) : b.warn ? (
+                    <Text style={[typeStyles.captionMedium, { color: colors.accent, marginTop: space[1], fontWeight: '700' }]}>
+                      Near limit
+                    </Text>
+                  ) : null}
                 </PressableCard>
               ))
             )}
@@ -482,6 +536,24 @@ export default function BudgetsScreen() {
             ) : (
               goals.map((g) => {
                 const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
+                const proj = (() => {
+                  if (!g.deadline) return null;
+                  const re = /^\d{4}-\d{2}-\d{2}$/;
+                  if (!re.test(g.deadline)) return null;
+                  const now = new Date();
+                  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  const startIso = g.createdAt.slice(0, 10);
+                  const endIso = g.deadline;
+                  const toUtc = (iso: string) => {
+                    const [yy, mm, dd] = iso.split('-').map(Number);
+                    return Date.UTC(yy, (mm ?? 1) - 1, dd ?? 1);
+                  };
+                  const totalDays = Math.max(1, Math.floor((toUtc(endIso) - toUtc(startIso)) / 86400000) + 1);
+                  const elapsedDays = Math.max(0, Math.min(totalDays, Math.floor((toUtc(todayIso) - toUtc(startIso)) / 86400000) + 1));
+                  const expected = (g.targetAmount * elapsedDays) / totalDays;
+                  const delta = g.savedAmount - expected;
+                  return { expected, delta };
+                })();
                 return (
                   <PressableCard
                     key={g.id}
@@ -496,6 +568,11 @@ export default function BudgetsScreen() {
                         {g.deadline ? (
                           <Text style={[typeStyles.caption, styles.deadline, { color: colors.textMuted }]}>
                             By {g.deadline}
+                          </Text>
+                        ) : null}
+                        {proj ? (
+                          <Text style={[typeStyles.captionMedium, { color: proj.delta >= 0 ? colors.income : colors.expense, marginTop: 2 }]}>
+                            {proj.delta >= 0 ? 'On track' : 'Behind'} · expected {formatMoney(proj.expected, settings.currency)}
                           </Text>
                         ) : null}
                       </View>
@@ -847,6 +924,14 @@ const styles = StyleSheet.create({
   card: { padding: space[2], marginBottom: space[3] - 4 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   cardTitle: { marginBottom: space[1] + 4 },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[1],
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: space[2] - 2,
+  },
   label: { marginBottom: space[1] },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] - 2 },
   chip: { paddingHorizontal: space[1] + 4, paddingVertical: space[1], borderRadius: radii.pill, borderWidth: 1 },

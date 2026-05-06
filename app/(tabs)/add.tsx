@@ -32,6 +32,8 @@ export default function AddScreen() {
   const {
     colors,
     accounts,
+    expenses,
+    incomes,
     addExpense,
     addSplitExpense,
     addIncome,
@@ -55,6 +57,58 @@ export default function AddScreen() {
     { category: expenseCategoryOptions[1] ?? expenseCategoryOptions[0] ?? 'Other', amount: '' },
   ]);
   const [receiptUri, setReceiptUri] = useState<string | null>(null);
+
+  const recentQuickFill = useMemo(() => {
+    const ex = expenses
+      .filter((e) => !e.splitGroupId)
+      .slice()
+      .sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)))
+      .slice(0, 4)
+      .map((e) => ({
+        kind: 'expense' as const,
+        id: e.id,
+        label: `${e.category} · ${e.amount.toFixed(2)}`,
+        amount: String(e.amount),
+        category: e.category,
+        accountId: e.accountId,
+        tag: e.tag ?? '',
+        note: e.note ?? '',
+        date: e.date.slice(0, 10),
+        receiptUri: e.receiptUri,
+      }));
+
+    const inc = incomes
+      .slice()
+      .sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)))
+      .slice(0, 4)
+      .map((i) => ({
+        kind: 'income' as const,
+        id: i.id,
+        label: `${i.category} · ${i.amount.toFixed(2)}`,
+        amount: String(i.amount),
+        category: i.category,
+        accountId: i.accountId,
+        tag: i.tag ?? '',
+        note: i.note ?? '',
+        date: i.date.slice(0, 10),
+      }));
+
+    return [...ex, ...inc].slice(0, 6);
+  }, [expenses, incomes]);
+
+  const applyQuickFill = (q: (typeof recentQuickFill)[number]) => {
+    void hapticLight();
+    runLayoutAnimation();
+    setEntryKind(q.kind);
+    setSplitMode(false);
+    setAmount(q.amount);
+    setCategory(q.category);
+    setAccountId(q.accountId ?? null);
+    setTag(q.tag);
+    setNote(q.note);
+    setDate(q.date);
+    setReceiptUri(q.kind === 'expense' ? (q.receiptUri ?? null) : null);
+  };
 
   const splitTotal = useMemo(() => {
     let s = 0;
@@ -171,6 +225,34 @@ export default function AddScreen() {
               <Ionicons name="create-outline" size={18} color={colors.textMuted} />
               <Text style={[typeStyles.title, { color: colors.text }]}>New entry</Text>
             </View>
+
+            {recentQuickFill.length > 0 ? (
+              <>
+                <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Recent</Text>
+                <View style={styles.chips}>
+                  {recentQuickFill.map((q) => (
+                    <Pressable
+                      key={`${q.kind}-${q.id}`}
+                      onPress={() => applyQuickFill(q)}
+                      style={({ pressed }) => [styles.chip, surfaceCard(colors, false), pressed && { opacity: 0.88 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use recent ${q.kind} ${q.label}`}
+                    >
+                      <View style={styles.recentChipRow}>
+                        <Ionicons
+                          name={q.kind === 'expense' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
+                          size={16}
+                          color={q.kind === 'expense' ? colors.expense : colors.income}
+                        />
+                        <Text style={[typeStyles.bodySmall, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {q.label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
             <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
             <View style={styles.kindRow}>
               <Pressable
@@ -591,6 +673,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   kindBtnRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
+  recentChipRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] - 2, maxWidth: 220 },
   input: {
     borderWidth: 1,
     borderRadius: radii.md,

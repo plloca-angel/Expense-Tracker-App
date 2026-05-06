@@ -60,6 +60,8 @@ type FinanceContextValue = {
   postRecurringForMonth: (ym: string) => Promise<number>;
   exportBackup: () => Promise<BackupPayload>;
   importBackup: (data: BackupPayload) => Promise<void>;
+  getRawSetting: (key: string) => Promise<string | null>;
+  setRawSetting: (key: string, value: string) => Promise<void>;
 };
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
@@ -365,6 +367,22 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const getRawSetting = useCallback(
+    async (key: string) => {
+      if (!db) return null;
+      return database.getSetting(db, key);
+    },
+    [db]
+  );
+
+  const setRawSetting = useCallback(
+    async (key: string, value: string) => {
+      if (!db) return;
+      await database.setSetting(db, key, value);
+    },
+    [db]
+  );
+
   const value = useMemo(
     () => ({
       ready,
@@ -404,6 +422,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       postRecurringForMonth,
       exportBackup,
       importBackup,
+      getRawSetting,
+      setRawSetting,
     }),
     [
       ready,
@@ -443,6 +463,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       postRecurringForMonth,
       exportBackup,
       importBackup,
+      getRawSetting,
+      setRawSetting,
     ]
   );
 
