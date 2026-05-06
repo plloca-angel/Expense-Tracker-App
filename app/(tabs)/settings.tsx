@@ -19,7 +19,7 @@ import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import type { BackupPayload } from '../../src/lib/backup';
-import { parseBackupJson } from '../../src/lib/backup';
+import { formatBackupImportPreview, parseBackupJson, summarizeBackupPayload } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
 import type { ThemePreference } from '../../src/types/settings';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
@@ -38,11 +38,16 @@ export default function SettingsScreen() {
     deleteCustomCategory,
     exportBackup,
     importBackup,
+    accounts,
+    addAccount,
+    deleteAccount,
   } = useFinance();
   const [newExpCat, setNewExpCat] = useState('');
   const [newIncCat, setNewIncCat] = useState('');
   const [exporting, setExporting] = useState(false);
   const [jsonBusy, setJsonBusy] = useState(false);
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccKind, setNewAccKind] = useState<'cash' | 'card' | 'bank' | 'other'>('cash');
 
   useTabHeaderSubtitle('Settings', 'Data & preferences', colors);
 
@@ -122,20 +127,24 @@ export default function SettingsScreen() {
     try {
       const raw = await FileSystem.readAsStringAsync(uri, { encoding: 'utf8' });
       const data = parseBackupJson(raw);
-      Alert.alert(
-        'Replace all data?',
-        'This overwrites expenses, income, budgets, goals, categories, and settings. This cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
-        ]
-      );
+      const preview = formatBackupImportPreview(summarizeBackupPayload(data));
+      Alert.alert('Replace all data?', preview, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
+      ]);
     } catch (e) {
       Alert.alert('Invalid backup', e instanceof Error ? e.message : 'Could not parse JSON.');
     }
   };
 
   const setTheme = (theme: ThemePreference) => void setSettings({ ...settings, theme });
+
+  const confirmDeleteAccount = (id: number, name: string) => {
+    Alert.alert('Remove account', `Detach “${name}” from transactions and delete it?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void deleteAccount(id) },
+    ]);
+  };
 
   const defaultsExp = new Set(['Food', 'Transport', 'Bills', 'Shopping', 'Health', 'Other']);
   const defaultsInc = new Set(['Salary', 'Freelance', 'Investment', 'Gift', 'Refund', 'Other']);
@@ -228,6 +237,81 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Accounts & wallets</Text>
+          <Text style={[styles.backupHint, { color: colors.textMuted }]}>
+            Label cash, cards, or bank accounts. Used when adding and editing transactions (like Budge multi-account
+            views).
+          </Text>
+          <View style={styles.segment}>
+            {(
+              [
+                ['cash', 'Cash'],
+                ['card', 'Card'],
+                ['bank', 'Bank'],
+                ['other', 'Other'],
+              ] as const
+            ).map(([key, label]) => {
+              const active = newAccKind === key;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setNewAccKind(key)}
+                  style={[
+                    styles.segBtn,
+                    { borderColor: colors.border },
+                    active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typeStyles.bodySmall,
+                      { color: colors.textSecondary },
+                      active && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.addRow}>
+            <TextInput
+              style={[
+                styles.addInput,
+                { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+              ]}
+              placeholder="Account name"
+              placeholderTextColor={colors.textMuted}
+              value={newAccName}
+              onChangeText={setNewAccName}
+            />
+            <Pressable
+              style={[styles.addBtn, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                const t = newAccName.trim();
+                if (!t) return;
+                void addAccount(t, newAccKind);
+                setNewAccName('');
+              }}
+            >
+              <Text style={styles.addBtnText}>Add</Text>
+            </Pressable>
+          </View>
+          {accounts.map((a) => (
+            <View key={a.id} style={[styles.catRow, { borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: '600' }}>{a.name}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 13 }}>{a.kind}</Text>
+              </View>
+              <Pressable onPress={() => confirmDeleteAccount(a.id, a.name)} accessibilityLabel={`Remove ${a.name}`}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              </Pressable>
+            </View>
+          ))}
         </View>
 
         <Pressable

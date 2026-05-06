@@ -1,12 +1,14 @@
 import * as SQLite from 'expo-sqlite';
 import type { BackupPayload } from '../lib/backup';
-import { BACKUP_VERSION } from '../lib/backup';
+import { BACKUP_VERSION, DEFAULT_ACCOUNTS } from '../lib/backup';
 import type { Budget } from '../types/budget';
 import type { SavingsGoal } from '../types/goal';
 import type { AppSettings, ThemePreference } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
+import type { Account } from '../types/account';
 import type { Expense } from '../types/expense';
 import type { Income } from '../types/income';
+import type { RecurringItem } from '../types/recurring';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -57,6 +59,45 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       );
     `);
     await db.execAsync('PRAGMA user_version = 2');
+    v = 2;
+  }
+
+  if (v < 3) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'other',
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO accounts (name, kind, sort_order) VALUES
+        ('Cash', 'cash', 0),
+        ('Card', 'card', 1),
+        ('Bank', 'bank', 2);
+    `);
+    await db.execAsync('ALTER TABLE expenses ADD COLUMN account_id INTEGER REFERENCES accounts(id)');
+    await db.execAsync('ALTER TABLE incomes ADD COLUMN account_id INTEGER REFERENCES accounts(id)');
+    await db.execAsync('PRAGMA user_version = 3');
+    v = 3;
+  }
+
+  if (v < 4) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS recurring_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('expense','income')),
+        day_of_month INTEGER NOT NULL DEFAULT 1,
+        account_id INTEGER REFERENCES accounts(id),
+        note TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        last_posted_ym TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    await db.execAsync('PRAGMA user_version = 4');
   }
 }
 
@@ -88,6 +129,7 @@ type ExpenseRow = {
   note: string | null;
   date: string;
   created_at: string;
+  account_id: number | null;
 };
 
 function mapExpenseRow(r: ExpenseRow): Expense {
@@ -99,12 +141,13 @@ function mapExpenseRow(r: ExpenseRow): Expense {
     note: r.note,
     date: r.date,
     createdAt: r.created_at,
+    accountId: r.account_id ?? null,
   };
 }
 
 export async function fetchAllExpenses(db: SQLite.SQLiteDatabase): Promise<Expense[]> {
   const rows = await db.getAllAsync<ExpenseRow>(
-    'SELECT id, amount, category, tag, note, date, created_at FROM expenses ORDER BY date DESC, id DESC'
+    'SELECT id, amount, category, tag, note, date, created_at, account_id FROM expenses ORDER BY date DESC, id DESC'
   );
   return rows.map(mapExpenseRow);
 }
@@ -115,18 +158,33 @@ export type NewExpenseInput = {
   tag?: string | null;
   note?: string | null;
   date: string;
+  accountId?: number | null;
 };
 
 export async function insertExpense(db: SQLite.SQLiteDatabase, input: NewExpenseInput): Promise<void> {
   const created = new Date().toISOString();
   await db.runAsync(
-    'INSERT INTO expenses (amount, category, tag, note, date, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
     input.amount,
     input.category,
     input.tag ?? null,
     input.note ?? null,
     input.date,
-    created
+    created,
+    input.accountId ?? null
+  );
+}
+
+export async function updateExpense(db: SQLite.SQLiteDatabase, id: number, input: NewExpenseInput): Promise<void> {
+  await db.runAsync(
+    'UPDATE expenses SET amount = ?, category = ?, tag = ?, note = ?, date = ?, account_id = ? WHERE id = ?',
+    input.amount,
+    input.category,
+    input.tag ?? null,
+    input.note ?? null,
+    input.date,
+    input.accountId ?? null,
+    id
   );
 }
 
@@ -143,12 +201,13 @@ function mapIncomeRow(r: ExpenseRow): Income {
     note: r.note,
     date: r.date,
     createdAt: r.created_at,
+    accountId: r.account_id ?? null,
   };
 }
 
 export async function fetchAllIncomes(db: SQLite.SQLiteDatabase): Promise<Income[]> {
   const rows = await db.getAllAsync<ExpenseRow>(
-    'SELECT id, amount, category, tag, note, date, created_at FROM incomes ORDER BY date DESC, id DESC'
+    'SELECT id, amount, category, tag, note, date, created_at, account_id FROM incomes ORDER BY date DESC, id DESC'
   );
   return rows.map(mapIncomeRow);
 }
@@ -158,13 +217,27 @@ export type NewIncomeInput = NewExpenseInput;
 export async function insertIncome(db: SQLite.SQLiteDatabase, input: NewIncomeInput): Promise<void> {
   const created = new Date().toISOString();
   await db.runAsync(
-    'INSERT INTO incomes (amount, category, tag, note, date, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO incomes (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
     input.amount,
     input.category,
     input.tag ?? null,
     input.note ?? null,
     input.date,
-    created
+    created,
+    input.accountId ?? null
+  );
+}
+
+export async function updateIncome(db: SQLite.SQLiteDatabase, id: number, input: NewIncomeInput): Promise<void> {
+  await db.runAsync(
+    'UPDATE incomes SET amount = ?, category = ?, tag = ?, note = ?, date = ?, account_id = ? WHERE id = ?',
+    input.amount,
+    input.category,
+    input.tag ?? null,
+    input.note ?? null,
+    input.date,
+    input.accountId ?? null,
+    id
   );
 }
 
@@ -226,6 +299,14 @@ export async function loadAppSettings(db: SQLite.SQLiteDatabase): Promise<AppSet
 export async function saveAppSettings(db: SQLite.SQLiteDatabase, settings: AppSettings): Promise<void> {
   await setSetting(db, 'currency', settings.currency);
   await setSetting(db, 'theme', settings.theme);
+}
+
+export async function getOnboardingSeen(db: SQLite.SQLiteDatabase): Promise<boolean> {
+  return (await getSetting(db, 'onboarding_seen')) === '1';
+}
+
+export async function setOnboardingSeen(db: SQLite.SQLiteDatabase): Promise<void> {
+  await setSetting(db, 'onboarding_seen', '1');
 }
 
 type CatRow = { name: string; kind: string };
@@ -317,8 +398,147 @@ export async function deleteGoal(db: SQLite.SQLiteDatabase, id: number): Promise
   await db.runAsync('DELETE FROM savings_goals WHERE id = ?', id);
 }
 
+type AccountRow = { id: number; name: string; kind: string; sort_order: number };
+
+function mapAccountRow(r: AccountRow): Account {
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind as Account['kind'],
+    sortOrder: r.sort_order,
+  };
+}
+
+export async function fetchAllAccounts(db: SQLite.SQLiteDatabase): Promise<Account[]> {
+  const rows = await db.getAllAsync<AccountRow>(
+    'SELECT id, name, kind, sort_order FROM accounts ORDER BY sort_order ASC, id ASC'
+  );
+  return rows.map(mapAccountRow);
+}
+
+export async function insertAccount(db: SQLite.SQLiteDatabase, name: string, kind: string): Promise<void> {
+  const row = await db.getFirstAsync<{ m: number }>('SELECT COALESCE(MAX(sort_order), -1) AS m FROM accounts');
+  const next = (row?.m ?? -1) + 1;
+  await db.runAsync('INSERT INTO accounts (name, kind, sort_order) VALUES (?, ?, ?)', name.trim(), kind, next);
+}
+
+export async function deleteAccount(db: SQLite.SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync('UPDATE expenses SET account_id = NULL WHERE account_id = ?', id);
+  await db.runAsync('UPDATE incomes SET account_id = NULL WHERE account_id = ?', id);
+  await db.runAsync('UPDATE recurring_items SET account_id = NULL WHERE account_id = ?', id);
+  await db.runAsync('DELETE FROM accounts WHERE id = ?', id);
+}
+
+type RecRow = {
+  id: number;
+  title: string;
+  amount: number;
+  category: string;
+  kind: string;
+  day_of_month: number;
+  account_id: number | null;
+  note: string | null;
+  active: number;
+  last_posted_ym: string | null;
+  created_at: string;
+};
+
+function mapRecurringRow(r: RecRow): RecurringItem {
+  return {
+    id: r.id,
+    title: r.title,
+    amount: r.amount,
+    category: r.category,
+    kind: r.kind as RecurringItem['kind'],
+    dayOfMonth: r.day_of_month,
+    accountId: r.account_id,
+    note: r.note,
+    active: r.active !== 0,
+    lastPostedYm: r.last_posted_ym,
+    createdAt: r.created_at,
+  };
+}
+
+export async function fetchAllRecurring(db: SQLite.SQLiteDatabase): Promise<RecurringItem[]> {
+  const rows = await db.getAllAsync<RecRow>(
+    'SELECT id, title, amount, category, kind, day_of_month, account_id, note, active, last_posted_ym, created_at FROM recurring_items ORDER BY active DESC, title ASC'
+  );
+  return rows.map(mapRecurringRow);
+}
+
+export type NewRecurringInput = {
+  title: string;
+  amount: number;
+  category: string;
+  kind: RecurringItem['kind'];
+  dayOfMonth: number;
+  accountId?: number | null;
+  note?: string | null;
+};
+
+export async function insertRecurring(db: SQLite.SQLiteDatabase, input: NewRecurringInput): Promise<void> {
+  const created = new Date().toISOString();
+  await db.runAsync(
+    `INSERT INTO recurring_items (title, amount, category, kind, day_of_month, account_id, note, active, last_posted_ym, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)`,
+    input.title.trim(),
+    input.amount,
+    input.category,
+    input.kind,
+    Math.min(28, Math.max(1, Math.floor(input.dayOfMonth))),
+    input.accountId ?? null,
+    input.note?.trim() || null,
+    created
+  );
+}
+
+export async function deleteRecurring(db: SQLite.SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync('DELETE FROM recurring_items WHERE id = ?', id);
+}
+
+async function updateRecurringLastPosted(db: SQLite.SQLiteDatabase, id: number, ym: string): Promise<void> {
+  await db.runAsync('UPDATE recurring_items SET last_posted_ym = ? WHERE id = ?', ym, id);
+}
+
+/** Insert transactions for active recurring items not yet posted for `ym` (YYYY-MM). Returns count posted. */
+export async function postRecurringForMonth(db: SQLite.SQLiteDatabase, ym: string): Promise<number> {
+  const items = await fetchAllRecurring(db);
+  const [y, mo] = ym.split('-').map(Number);
+  const lastDay = new Date(y, mo, 0).getDate();
+  let n = 0;
+  for (const r of items) {
+    if (!r.active) continue;
+    if (r.lastPostedYm === ym) continue;
+    const day = Math.min(Math.max(1, r.dayOfMonth), lastDay);
+    const dateStr = `${ym}-${String(day).padStart(2, '0')}`;
+    const note = r.note ? `[Recurring] ${r.title}: ${r.note}` : `[Recurring] ${r.title}`;
+    if (r.kind === 'expense') {
+      await insertExpense(db, {
+        amount: r.amount,
+        category: r.category,
+        tag: 'Recurring',
+        note,
+        date: dateStr,
+        accountId: r.accountId,
+      });
+    } else {
+      await insertIncome(db, {
+        amount: r.amount,
+        category: r.category,
+        tag: 'Recurring',
+        note,
+        date: dateStr,
+        accountId: r.accountId,
+      });
+    }
+    await updateRecurringLastPosted(db, r.id, ym);
+    n += 1;
+  }
+  return n;
+}
+
 export async function exportDatabaseSnapshot(db: SQLite.SQLiteDatabase): Promise<BackupPayload> {
-  const [expenses, incomes, budgets, goals, settings, ce, ci] = await Promise.all([
+  const [expenses, incomes, budgets, goals, settings, ce, ci, accounts, recurring] = await Promise.all([
     fetchAllExpenses(db),
     fetchAllIncomes(db),
     fetchAllBudgets(db),
@@ -326,32 +546,78 @@ export async function exportDatabaseSnapshot(db: SQLite.SQLiteDatabase): Promise
     loadAppSettings(db),
     fetchCustomCategories(db, 'expense'),
     fetchCustomCategories(db, 'income'),
+    fetchAllAccounts(db),
+    fetchAllRecurring(db),
   ]);
   const customCategories = [
     ...ce.map((name) => ({ name, kind: 'expense' as const })),
     ...ci.map((name) => ({ name, kind: 'income' as const })),
   ];
+  const idToName = new Map(accounts.map((a) => [a.id, a.name] as const));
   return {
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     settings,
-    expenses: expenses.map(({ id: _id, ...e }) => e),
-    incomes: incomes.map(({ id: _id, ...i }) => i),
+    expenses: expenses.map((e) => ({
+      amount: e.amount,
+      category: e.category,
+      tag: e.tag,
+      note: e.note,
+      date: e.date,
+      createdAt: e.createdAt,
+      accountName: e.accountId != null ? (idToName.get(e.accountId) ?? null) : null,
+    })),
+    incomes: incomes.map((i) => ({
+      amount: i.amount,
+      category: i.category,
+      tag: i.tag,
+      note: i.note,
+      date: i.date,
+      createdAt: i.createdAt,
+      accountName: i.accountId != null ? (idToName.get(i.accountId) ?? null) : null,
+    })),
     budgets: budgets.map(({ id: _id, ...b }) => b),
     savingsGoals: goals.map(({ id: _id, ...g }) => g),
     customCategories,
+    accounts: accounts.map(({ id: _id, name, kind, sortOrder }) => ({ name, kind, sortOrder })),
+    recurringItems: recurring.map((r) => ({
+      title: r.title,
+      amount: r.amount,
+      category: r.category,
+      kind: r.kind,
+      dayOfMonth: r.dayOfMonth,
+      note: r.note,
+      active: r.active,
+      lastPostedYm: r.lastPostedYm,
+      createdAt: r.createdAt,
+      accountName: r.accountId != null ? (idToName.get(r.accountId) ?? null) : null,
+    })),
   };
 }
 
 export async function importDatabaseSnapshot(db: SQLite.SQLiteDatabase, data: BackupPayload): Promise<void> {
   if (data.version !== BACKUP_VERSION) throw new Error(`Unsupported backup version: ${data.version}`);
   await db.withTransactionAsync(async () => {
+    await db.execAsync('DELETE FROM recurring_items');
     await db.execAsync('DELETE FROM savings_goals');
     await db.execAsync('DELETE FROM budgets');
     await db.execAsync('DELETE FROM expenses');
     await db.execAsync('DELETE FROM incomes');
     await db.execAsync('DELETE FROM custom_categories');
     await db.execAsync('DELETE FROM app_settings');
+    await db.execAsync('DELETE FROM accounts');
+
+    const accountSeeds = data.accounts.length > 0 ? data.accounts : DEFAULT_ACCOUNTS;
+    for (const a of accountSeeds) {
+      await db.runAsync('INSERT INTO accounts (name, kind, sort_order) VALUES (?, ?, ?)', a.name, a.kind, a.sortOrder);
+    }
+    const importedAccounts = await fetchAllAccounts(db);
+    const nameToId = new Map(importedAccounts.map((x) => [x.name.trim().toLowerCase(), x.id] as const));
+    const resolveAid = (name: string | null | undefined): number | null => {
+      if (name == null || !String(name).trim()) return null;
+      return nameToId.get(String(name).trim().toLowerCase()) ?? null;
+    };
+
     await saveAppSettings(db, data.settings);
     for (const c of data.customCategories) {
       await insertCustomCategory(db, c.name, c.kind);
@@ -369,26 +635,44 @@ export async function importDatabaseSnapshot(db: SQLite.SQLiteDatabase, data: Ba
         g.createdAt
       );
     }
+    for (const r of data.recurringItems) {
+      await db.runAsync(
+        `INSERT INTO recurring_items (title, amount, category, kind, day_of_month, account_id, note, active, last_posted_ym, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        r.title,
+        r.amount,
+        r.category,
+        r.kind,
+        Math.min(28, Math.max(1, Math.floor(r.dayOfMonth))),
+        resolveAid(r.accountName),
+        r.note ?? null,
+        r.active ? 1 : 0,
+        r.lastPostedYm ?? null,
+        r.createdAt
+      );
+    }
     for (const e of data.expenses) {
       await db.runAsync(
-        'INSERT INTO expenses (amount, category, tag, note, date, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
         e.amount,
         e.category,
         e.tag ?? null,
         e.note ?? null,
         e.date,
-        e.createdAt
+        e.createdAt,
+        resolveAid(e.accountName)
       );
     }
     for (const i of data.incomes) {
       await db.runAsync(
-        'INSERT INTO incomes (amount, category, tag, note, date, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO incomes (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
         i.amount,
         i.category,
         i.tag ?? null,
         i.note ?? null,
         i.date,
-        i.createdAt
+        i.createdAt,
+        resolveAid(i.accountName)
       );
     }
   });

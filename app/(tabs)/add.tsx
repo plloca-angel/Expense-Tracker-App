@@ -21,12 +21,13 @@ import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/t
 type EntryKind = 'expense' | 'income';
 
 export default function AddScreen() {
-  const { colors, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
+  const { colors, accounts, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
   useTabHeaderSubtitle('Add', 'New entry', colors);
   const [entryKind, setEntryKind] = useState<EntryKind>('expense');
   const [amount, setAmount] = useState('');
   const categories = entryKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
   const [category, setCategory] = useState(categories[0] ?? 'Other');
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISODate());
@@ -57,6 +58,7 @@ export default function AddScreen() {
         tag: tag.trim() || null,
         note: note.trim() || null,
         date: date.trim(),
+        accountId,
       };
       if (entryKind === 'expense') await addExpense(payload);
       else await addIncome(payload);
@@ -161,6 +163,60 @@ export default function AddScreen() {
                     ]}
                   >
                     {c}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Account</Text>
+          <View style={styles.chips}>
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setAccountId(null);
+              }}
+              style={({ pressed }) => [
+                styles.chip,
+                surfaceCard(colors, false),
+                accountId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Text
+                style={[
+                  typeStyles.bodySmall,
+                  { color: colors.textSecondary },
+                  accountId === null && { color: colors.accent, fontWeight: '700' },
+                ]}
+              >
+                Unspecified
+              </Text>
+            </Pressable>
+            {accounts.map((a) => {
+              const active = accountId === a.id;
+              return (
+                <Pressable
+                  key={a.id}
+                  onPress={() => {
+                    void hapticLight();
+                    setAccountId(a.id);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    surfaceCard(colors, false),
+                    active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typeStyles.bodySmall,
+                      { color: colors.textSecondary },
+                      active && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {a.name}
                   </Text>
                 </Pressable>
               );

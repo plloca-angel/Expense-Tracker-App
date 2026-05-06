@@ -20,7 +20,7 @@ import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
 import { formatMoney, parseAmount } from '../../src/lib/money';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
-type TabMode = 'budgets' | 'goals';
+type TabMode = 'budgets' | 'goals' | 'recurring';
 
 export default function BudgetsScreen() {
   const {
@@ -33,9 +33,15 @@ export default function BudgetsScreen() {
     upsertBudget,
     removeBudget,
     expenseCategoryOptions,
+    incomeCategoryOptions,
     addGoal,
     updateGoalSaved,
     removeGoal,
+    accounts,
+    recurringItems,
+    addRecurring,
+    removeRecurring,
+    postRecurringForMonth,
     refresh,
   } = useFinance();
   const [mode, setMode] = useState<TabMode>('budgets');
@@ -46,14 +52,32 @@ export default function BudgetsScreen() {
   const [goalDeadline, setGoalDeadline] = useState('');
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [recTitle, setRecTitle] = useState('');
+  const [recAmount, setRecAmount] = useState('');
+  const [recCategory, setRecCategory] = useState<string>(expenseCategoryOptions[0] ?? 'Other');
+  const [recKind, setRecKind] = useState<'expense' | 'income'>('expense');
+  const [recDay, setRecDay] = useState('1');
+  const [recNote, setRecNote] = useState('');
+  const [recAccountId, setRecAccountId] = useState<number | null>(null);
 
-  const plansSubtitle = mode === 'budgets' ? 'Monthly limits by category' : 'Manual savings targets';
+  const plansSubtitle =
+    mode === 'budgets'
+      ? 'Monthly limits by category'
+      : mode === 'goals'
+        ? 'Manual savings targets'
+        : 'Scheduled bills & income';
   useTabHeaderSubtitle('Plans', plansSubtitle, colors);
 
   useEffect(() => {
     const first = expenseCategoryOptions[0] ?? 'Other';
     if (!expenseCategoryOptions.includes(category)) setCategory(first);
   }, [expenseCategoryOptions, category]);
+
+  useEffect(() => {
+    const opts = recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
+    const first = opts[0] ?? 'Other';
+    if (!opts.includes(recCategory)) setRecCategory(first);
+  }, [expenseCategoryOptions, incomeCategoryOptions, recKind, recCategory]);
 
   useEffect(() => {
     const next: Record<number, string> = {};
@@ -123,6 +147,48 @@ export default function BudgetsScreen() {
     ]);
   };
 
+  const addRecurringItem = () => {
+    const title = recTitle.trim();
+    if (!title) {
+      Alert.alert('Recurring', 'Enter a name (e.g. Rent, Netflix).');
+      return;
+    }
+    const amt = parseAmount(recAmount);
+    if (amt === null) {
+      Alert.alert('Recurring', 'Enter a positive amount.');
+      return;
+    }
+    const d = Number.parseInt(recDay, 10);
+    if (!Number.isFinite(d) || d < 1 || d > 28) {
+      Alert.alert('Recurring', 'Day of month must be 1–28.');
+      return;
+    }
+    void (async () => {
+      await addRecurring({
+        title,
+        amount: amt,
+        category: recCategory,
+        kind: recKind,
+        dayOfMonth: d,
+        accountId: recAccountId,
+        note: recNote.trim() || null,
+      });
+      void hapticSuccess();
+      setRecTitle('');
+      setRecAmount('');
+      setRecDay('1');
+      setRecNote('');
+      setRecAccountId(null);
+    })();
+  };
+
+  const postRecurring = () => {
+    void (async () => {
+      const n = await postRecurringForMonth(ym);
+      Alert.alert('Recurring', n === 0 ? 'Nothing due to post for this month (already posted or none active).' : `Posted ${n} item(s) for ${ym}.`);
+    })();
+  };
+
   const confirmRemoveGoal = (id: number, name: string) => {
     Alert.alert('Remove goal', `Delete “${name}”?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -175,7 +241,8 @@ export default function BudgetsScreen() {
         {(
           [
             ['budgets', 'Budgets'],
-            ['goals', 'Savings goals'],
+            ['goals', 'Goals'],
+            ['recurring', 'Recurring'],
           ] as const
         ).map(([key, label]) => (
           <Pressable
@@ -310,7 +377,7 @@ export default function BudgetsScreen() {
               ))
             )}
           </>
-        ) : (
+        ) : mode === 'goals' ? (
           <>
             <Text style={[typeStyles.bodySmall, styles.hint, { color: colors.textMuted }]}>
               Track savings targets. Update “saved so far” as you set money aside (manual progress).
@@ -437,6 +504,226 @@ export default function BudgetsScreen() {
               })
             )}
           </>
+        ) : (
+          <>
+            <Text style={[typeStyles.bodySmall, styles.hint, { color: colors.textMuted }]}>
+              Bills and subscriptions (Budge-style). Post creates real transactions for {ym} when not already posted.
+            </Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.btn,
+                { backgroundColor: colors.income, marginBottom: space[2] },
+                pressed && { opacity: 0.92 },
+              ]}
+              onPress={postRecurring}
+            >
+              <Text style={styles.btnText}>Post due items for {ym}</Text>
+            </Pressable>
+
+            <View style={[styles.card, surfaceCard(colors, true)]}>
+              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New recurring</Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Name</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                placeholder="Rent, Netflix…"
+                placeholderTextColor={colors.textMuted}
+                value={recTitle}
+                onChangeText={setRecTitle}
+              />
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
+              <View style={styles.recKindRow}>
+                {(['expense', 'income'] as const).map((k) => (
+                  <Pressable
+                    key={k}
+                    onPress={() => {
+                      void hapticLight();
+                      setRecKind(k);
+                    }}
+                    style={({ pressed }) => [
+                      styles.recKindBtn,
+                      { borderColor: colors.border, backgroundColor: colors.bg },
+                      recKind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
+                      pressed && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typeStyles.bodySmall,
+                        { color: colors.textSecondary },
+                        recKind === k && { color: '#fff', fontWeight: '700' },
+                      ]}
+                    >
+                      {k === 'expense' ? 'Expense' : 'Income'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Amount</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                keyboardType="decimal-pad"
+                value={recAmount}
+                onChangeText={setRecAmount}
+              />
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <View style={styles.chips}>
+                {(recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions).map((c) => {
+                  const active = c === recCategory;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => {
+                        void hapticLight();
+                        setRecCategory(c);
+                      }}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        { borderColor: colors.border, backgroundColor: colors.bg },
+                        active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typeStyles.captionMedium,
+                          { color: colors.textSecondary },
+                          active && { color: colors.accent, fontWeight: '700' },
+                        ]}
+                      >
+                        {c}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Day of month (1–28)
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                keyboardType="number-pad"
+                value={recDay}
+                onChangeText={setRecDay}
+              />
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Account (optional)
+              </Text>
+              <View style={styles.chips}>
+                <Pressable
+                  onPress={() => {
+                    void hapticLight();
+                    setRecAccountId(null);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    { borderColor: colors.border, backgroundColor: colors.bg },
+                    recAccountId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typeStyles.captionMedium,
+                      { color: colors.textSecondary },
+                      recAccountId === null && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    None
+                  </Text>
+                </Pressable>
+                {accounts.map((a) => {
+                  const active = recAccountId === a.id;
+                  return (
+                    <Pressable
+                      key={a.id}
+                      onPress={() => {
+                        void hapticLight();
+                        setRecAccountId(a.id);
+                      }}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        { borderColor: colors.border, backgroundColor: colors.bg },
+                        active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                        pressed && { opacity: 0.88 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typeStyles.captionMedium,
+                          { color: colors.textSecondary },
+                          active && { color: colors.accent, fontWeight: '700' },
+                        ]}
+                      >
+                        {a.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Note (optional)
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                value={recNote}
+                onChangeText={setRecNote}
+              />
+              <Pressable
+                style={({ pressed }) => [styles.btn, { backgroundColor: colors.accent }, pressed && { opacity: 0.92 }]}
+                onPress={addRecurringItem}
+              >
+                <Text style={styles.btnText}>Save recurring</Text>
+              </Pressable>
+            </View>
+
+            <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>
+              Active recurring
+            </Text>
+            {recurringItems.length === 0 ? (
+              <EmptyStateCard
+                colors={colors}
+                title="No recurring items yet"
+                description="Add rent, subscriptions, or transfers. Post due items to create transactions for this month."
+                icon={<Ionicons name="repeat-outline" size={36} color={colors.textMuted} />}
+              />
+            ) : (
+              recurringItems.map((r) => (
+                <View key={r.id} style={[styles.row, surfaceCard(colors, true)]}>
+                  <View style={styles.rowTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[typeStyles.title, { color: colors.text }]}>{r.title}</Text>
+                      <Text style={[typeStyles.bodySmall, styles.nums, { color: colors.textMuted }]}>
+                        {formatMoney(r.amount, settings.currency)} · {r.category} · day {r.dayOfMonth} ·{' '}
+                        {r.kind}
+                        {r.lastPostedYm ? ` · last posted ${r.lastPostedYm}` : ''}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => void removeRecurring(r.id)}
+                      hitSlop={12}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete recurring ${r.title}`}
+                      style={({ pressed }) => [styles.iconHit, pressed && { opacity: 0.65 }]}
+                    >
+                      <Ionicons name="trash-outline" size={22} color={colors.danger} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -449,6 +736,14 @@ const styles = StyleSheet.create({
   loadingHint: { marginTop: space[1] + 4 },
   modeRow: { flexDirection: 'row', paddingHorizontal: space[2], paddingTop: space[1], gap: space[1] + 2 },
   modeBtn: { flex: 1, paddingVertical: space[1] + 4, borderRadius: radii.md, alignItems: 'center' },
+  recKindRow: { flexDirection: 'row', gap: space[1] + 2, marginBottom: space[1] / 2 },
+  recKindBtn: {
+    flex: 1,
+    paddingVertical: space[1] + 4,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
   scroll: { padding: space[3], paddingBottom: space[5] },
   hint: { marginBottom: space[2] },
   card: { padding: space[2], marginBottom: space[3] - 4 },

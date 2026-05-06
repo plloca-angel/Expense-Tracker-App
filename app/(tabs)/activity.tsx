@@ -1,15 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
@@ -29,19 +32,34 @@ type Row =
 type FilterKind = 'all' | 'expense' | 'income';
 
 export default function ActivityScreen() {
-  const { ready, colors, settings, expenses, incomes, removeExpense, removeIncome, refresh } = useFinance();
+  const { category: paramCategory, accountId: paramAccount } = useLocalSearchParams<{
+    category?: string;
+    accountId?: string;
+  }>();
+  const { ready, colors, settings, expenses, incomes, accounts, removeExpense, removeIncome, refresh } =
+    useFinance();
   const [kind, setKind] = useState<FilterKind>('all');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
+  const accountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name] as const)),
+    [accounts]
+  );
+
   const headerSubtitle = useMemo(() => {
     const kindLabel = kind === 'all' ? 'All' : kind === 'expense' ? 'Expenses' : 'Income';
     const periodLabel =
       period === 'all' ? 'All time' : period === 'month' ? 'This month' : 'Last 30 days';
+    const filterBits: string[] = [];
+    if (paramCategory) filterBits.push(`Category: ${paramCategory}`);
+    if (paramAccount) filterBits.push('Account');
+    const filterNote = filterBits.length ? ` · ${filterBits.join(' · ')}` : '';
     const searchNote = search.trim() ? ' · Search' : '';
-    return `${kindLabel} · ${periodLabel}${searchNote}`;
-  }, [kind, period, search]);
+    return `${kindLabel} · ${periodLabel}${filterNote}${searchNote}`;
+  }, [kind, period, search, paramCategory, paramAccount]);
+
   useTabHeaderSubtitle('Activity', headerSubtitle, colors);
 
   const onRefresh = useCallback(async () => {
@@ -56,6 +74,18 @@ export default function ActivityScreen() {
   const data = useMemo(() => {
     let ex = filterByPeriod(expenses, period);
     let inc = filterByPeriod(incomes, period);
+    if (paramCategory) {
+      const c = String(paramCategory);
+      ex = ex.filter((e) => e.category === c);
+      inc = inc.filter((i) => i.category === c);
+    }
+    if (paramAccount) {
+      const aid = Number(paramAccount);
+      if (Number.isFinite(aid)) {
+        ex = ex.filter((e) => e.accountId === aid);
+        inc = inc.filter((i) => i.accountId === aid);
+      }
+    }
     const q = search.trim().toLowerCase();
     if (q) {
       const match = (note: string | null, tag: string | null, cat: string) => {
@@ -75,7 +105,7 @@ export default function ActivityScreen() {
       return b.data.id - a.data.id;
     });
     return rows;
-  }, [expenses, incomes, kind, period, search]);
+  }, [expenses, incomes, kind, period, search, paramCategory, paramAccount]);
 
   const confirmDelete = useCallback(
     (row: Row) => {
@@ -109,6 +139,71 @@ export default function ActivityScreen() {
     [removeExpense, removeIncome, settings.currency]
   );
 
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Row>) => {
+      const d = item.data;
+      const isExp = item.kind === 'expense';
+      const acc =
+        d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
+      return (
+        <View style={[styles.row, surfaceCard(colors, true)]}>
+          <View style={styles.rowIcon}>
+            <Ionicons
+              name={isExp ? 'arrow-down-circle' : 'arrow-up-circle'}
+              size={28}
+              color={isExp ? colors.expense : colors.income}
+            />
+          </View>
+          <View style={styles.rowMain}>
+            <Text style={[typeStyles.title, { color: colors.text }]}>
+              {isExp ? '−' : '+'}
+              {formatMoney(d.amount, settings.currency)}
+            </Text>
+            <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary, marginTop: space[1] / 2 }]}>
+              {d.category}
+            </Text>
+            <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+              {d.date}
+              {d.tag ? ` · ${d.tag}` : ''}
+              {acc ? ` · ${acc}` : ''}
+            </Text>
+            {d.note ? (
+              <Text style={[typeStyles.bodySmall, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+                {d.note}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.rowActions}>
+            <Pressable
+              onPress={() =>
+                void router.push({
+                  pathname: '/edit-transaction',
+                  params: { id: String(d.id), kind: item.kind },
+                })
+              }
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.kind}, ${d.category}`}
+            >
+              <Ionicons name="pencil-outline" size={22} color={colors.accent} />
+            </Pressable>
+            <Pressable
+              onPress={() => confirmDelete(item)}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={isExp ? `Delete expense, ${d.category}` : `Delete income, ${d.category}`}
+            >
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            </Pressable>
+          </View>
+        </View>
+      );
+    },
+    [colors, settings.currency, confirmDelete, accountNameById]
+  );
+
+  const keyExtractor = useCallback((item: Row) => `${item.kind}-${item.data.id}`, []);
+
   if (!ready) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.bg }]}>
@@ -131,6 +226,11 @@ export default function ActivityScreen() {
                 void hapticLight();
                 setKind(k);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: kind === k }}
+              accessibilityLabel={
+                k === 'all' ? 'Show all transactions' : k === 'expense' ? 'Show expenses only' : 'Show income only'
+              }
               style={({ pressed }) => [
                 styles.segBtn,
                 { borderColor: colors.border },
@@ -164,6 +264,11 @@ export default function ActivityScreen() {
                 void hapticLight();
                 setPeriod(k);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: period === k }}
+              accessibilityLabel={
+                k === 'all' ? 'Time range: all time' : k === 'month' ? 'Time range: this month' : 'Time range: last 30 days'
+              }
               style={({ pressed }) => [
                 styles.segBtn,
                 { borderColor: colors.border },
@@ -184,23 +289,38 @@ export default function ActivityScreen() {
           ))}
         </View>
         <TextInput
-          style={[
-            styles.search,
-            surfaceCard(colors, false),
-            { color: colors.text },
-          ]}
+          style={[styles.search, surfaceCard(colors, false), { color: colors.text }]}
           placeholder="Search note, tag, category"
           placeholderTextColor={colors.textMuted}
           value={search}
           onChangeText={setSearch}
         />
+        {paramCategory || paramAccount ? (
+          <View style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}>
+            <Text style={[styles.filterText, { color: colors.text }]} numberOfLines={2}>
+              {paramCategory ? `Category: ${paramCategory}` : ''}
+              {paramCategory && paramAccount ? ' · ' : ''}
+              {paramAccount
+                ? `Account: ${accountNameById.get(Number(paramAccount)) ?? paramAccount}`
+                : ''}
+            </Text>
+            <Pressable
+              onPress={() => router.replace('/(tabs)/activity')}
+              style={({ pressed }) => [styles.clearFilter, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={{ color: colors.accent, fontWeight: '700' }}>Clear</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       <FlatList
         data={data}
-        keyExtractor={(item) => `${item.kind}-${item.data.id}`}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         initialNumToRender={14}
-        maxToRenderPerBatch={14}
-        windowSize={10}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.accent} />
         }
@@ -213,52 +333,6 @@ export default function ActivityScreen() {
             icon={<Ionicons name="file-tray-outline" size={36} color={colors.textMuted} />}
           />
         }
-        renderItem={({ item }) => {
-          const d = item.data;
-          const isExp = item.kind === 'expense';
-          return (
-            <View style={[styles.row, surfaceCard(colors, true)]}>
-              <View style={styles.rowIcon}>
-                <Ionicons
-                  name={isExp ? 'arrow-down-circle' : 'arrow-up-circle'}
-                  size={28}
-                  color={isExp ? colors.expense : colors.income}
-                />
-              </View>
-              <View style={styles.rowMain}>
-                <Text style={[typeStyles.title, { color: colors.text }]}>
-                  {isExp ? '−' : '+'}
-                  {formatMoney(d.amount, settings.currency)}
-                </Text>
-                <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary, marginTop: space[1] / 2 }]}>
-                  {d.category}
-                </Text>
-                <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
-                  {d.date}
-                  {d.tag ? ` · ${d.tag}` : ''}
-                </Text>
-                {d.note ? (
-                  <Text style={[typeStyles.bodySmall, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
-                    {d.note}
-                  </Text>
-                ) : null}
-              </View>
-              <Pressable
-                onPress={() => confirmDelete(item)}
-                accessibilityRole="button"
-                accessibilityLabel={isExp ? 'Delete expense' : 'Delete income'}
-                hitSlop={12}
-                style={({ pressed }) => [
-                  styles.trash,
-                  { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
-                  pressed && { opacity: 0.65 },
-                ]}
-              >
-                <Ionicons name="trash-outline" size={22} color={colors.danger} />
-              </Pressable>
-            </View>
-          );
-        }}
       />
     </SafeAreaView>
   );
@@ -271,8 +345,10 @@ const styles = StyleSheet.create({
   toolbar: { paddingHorizontal: space[2], paddingTop: space[1], paddingBottom: space[1] / 2, gap: space[1] + 2 },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1] },
   segBtn: {
-    paddingHorizontal: space[1] + 4,
-    paddingVertical: space[1],
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 2,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: radii.md - 2,
     borderWidth: 1,
   },
@@ -292,5 +368,17 @@ const styles = StyleSheet.create({
   },
   rowIcon: { marginRight: space[1] + 2, marginTop: 2 },
   rowMain: { flex: 1 },
-  trash: {},
+  rowActions: { flexDirection: 'row', alignItems: 'flex-start' },
+  iconBtn: { padding: 8, minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  filterBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1] + 2,
+    paddingHorizontal: space[1] + 4,
+    paddingVertical: space[1] + 2,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  filterText: { flex: 1, fontSize: 14 },
+  clearFilter: { paddingVertical: 4, paddingHorizontal: space[1] },
 });

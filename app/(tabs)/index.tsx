@@ -1,3 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -145,7 +148,31 @@ export default function OverviewScreen() {
           })}
         </View>
 
-        <View style={[styles.hero, surfaceCard(colors, true)]}>
+        <Pressable
+          onPress={() => router.push('/analytics')}
+          style={[
+            styles.analyticsCta,
+            { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open analytics and calendar"
+        >
+          <Ionicons name="stats-chart-outline" size={22} color={colors.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.analyticsTitle, { color: colors.text }]}>Analytics & calendar</Text>
+            <Text style={[styles.analyticsSub, { color: colors.textSecondary }]}>
+              Month heatmap, trends, category drill-down
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </Pressable>
+
+        <LinearGradient
+          colors={[colors.card, colors.bgElevated]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.hero, { borderColor: colors.border }]}
+        >
           <View style={styles.heroGrid}>
             <View style={styles.heroCell}>
               <Text style={[typeStyles.captionMedium, { color: colors.textMuted }]}>Expenses</Text>
@@ -170,7 +197,7 @@ export default function OverviewScreen() {
             {fExpenses.length} expense{fExpenses.length === 1 ? '' : 's'} · {fIncomes.length} income
             {fIncomes.length === 1 ? '' : 's'}
           </Text>
-        </View>
+        </LinearGradient>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
           <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Insights</Text>
@@ -284,6 +311,31 @@ export default function OverviewScreen() {
               />
             </View>
           )}
+          {catTotals.length > 0 ? (
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.breakdownTitle, { color: colors.textSecondary }]}>Tap to filter activity</Text>
+              {catTotals.slice(0, 6).map((item, idx) => (
+                <Pressable
+                  key={item.category}
+                  onPress={() =>
+                    router.push(`/(tabs)/activity?category=${encodeURIComponent(item.category)}`)
+                  }
+                  style={[styles.breakdownRow, { borderColor: colors.border }]}
+                >
+                  <View
+                    style={[
+                      styles.breakdownDot,
+                      { backgroundColor: CATEGORY_CHART_COLORS[idx % CATEGORY_CHART_COLORS.length] },
+                    ]}
+                  />
+                  <Text style={[styles.breakdownCat, { color: colors.text }]}>{item.category}</Text>
+                  <Text style={[styles.breakdownAmt, { color: colors.textSecondary }]}>
+                    {formatMoney(item.total, settings.currency)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
@@ -327,7 +379,24 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
   },
-  hero: { padding: space[3], marginBottom: space[2] },
+  analyticsCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1] + 4,
+    padding: space[2],
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    marginBottom: space[2],
+  },
+  analyticsTitle: { fontSize: 16, fontWeight: '700' },
+  analyticsSub: { fontSize: 13, marginTop: 2 },
+  hero: {
+    borderRadius: radii.lg,
+    padding: space[3],
+    marginBottom: space[2],
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
   heroGrid: { flexDirection: 'row', gap: space[2] },
   heroCell: { flex: 1 },
   netRow: {
@@ -349,4 +418,15 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: radii.sm / 2 },
   insightLine: { marginBottom: space[1] - 2 },
   goalPreview: { marginBottom: space[1] + 4 },
+  breakdownTitle: { fontSize: 13, fontWeight: '600', marginBottom: space[1] },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: space[1] + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: space[1] + 2,
+  },
+  breakdownDot: { width: 10, height: 10, borderRadius: 5 },
+  breakdownCat: { flex: 1, fontSize: 15, fontWeight: '600' },
+  breakdownAmt: { fontSize: 15, fontWeight: '700' },
 });
