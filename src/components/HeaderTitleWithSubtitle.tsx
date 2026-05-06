@@ -1,4 +1,5 @@
 import { Platform, StyleSheet, Text, View } from 'react-native';
+import { AppLogo } from './AppLogo';
 import type { ThemeColors } from '../theme/colors';
 import { type as typeStyles } from '../theme/tokens';
 
@@ -16,9 +17,16 @@ export function HeaderTitleWithSubtitle({ title, subtitle, colors }: Props) {
         Platform.OS === 'android' && styles.wrapAndroid,
       ]}
     >
-      <Text style={[typeStyles.title, { color: colors.text }]} numberOfLines={1}>
-        {title}
-      </Text>
+      <View style={styles.titleRow}>
+        {title === 'Overview' ? (
+          <View style={styles.logoWrap}>
+            <AppLogo size={18} />
+          </View>
+        ) : null}
+        <Text style={[typeStyles.title, { color: colors.text }]} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
       {subtitle ? (
         <Text style={[typeStyles.navSubtitle, { color: colors.textMuted }]} numberOfLines={2}>
           {subtitle}
@@ -31,4 +39,6 @@ export function HeaderTitleWithSubtitle({ title, subtitle, colors }: Props) {
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center', maxWidth: 280 },
   wrapAndroid: { alignItems: 'flex-start' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoWrap: { marginTop: 1 },
 });

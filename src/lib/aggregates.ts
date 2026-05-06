@@ -77,8 +77,10 @@ export function dailyTotalsInRangeTail(
   }
   keys.reverse();
   const days = keys.map((key) => {
-    const [, mm, dd] = key.split('-');
-    return { key, label: `${Number(mm)}/${Number(dd)}`, total: 0 };
+    const [yy, mm, dd] = key.split('-').map(Number);
+    const dt = new Date(yy, (mm ?? 1) - 1, dd ?? 1);
+    const label = dt.toLocaleString(undefined, { month: 'short', day: 'numeric' });
+    return { key, label, total: 0 };
   });
   const indexByKey = new Map(days.map((x, i) => [x.key, i] as const));
   for (const e of rows) {
