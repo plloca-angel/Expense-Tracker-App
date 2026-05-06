@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "expense-tracker",
+    "name": "ExpenseTrack",
     "slug": "expense-tracker",
     "scheme": "expense-tracker",
     "version": "1.0.0",
