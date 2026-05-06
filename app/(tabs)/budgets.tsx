@@ -27,6 +27,17 @@ import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/t
 
 type TabMode = 'budgets' | 'goals' | 'recurring';
 
+const OVERALL_BUDGET_KEY = 'overall_monthly_budget';
+
+/** Split `total` (currency units) across `n` buckets so the rounded cents sum exactly. */
+function splitTotalEvenly(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / n);
+  const remainder = cents % n;
+  return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+}
+
 export default function BudgetsScreen() {
   const {
     ready,
@@ -61,6 +72,7 @@ export default function BudgetsScreen() {
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [rolloverEnabled, setRolloverEnabled] = useState(false);
+  const [overallBudgetStr, setOverallBudgetStr] = useState('');
   const [recTitle, setRecTitle] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recCategory, setRecCategory] = useState<string>(expenseCategoryOptions[0] ?? 'Other');
@@ -106,7 +118,21 @@ export default function BudgetsScreen() {
     };
   }, [getRawSetting]);
 
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const raw = await getRawSetting(OVERALL_BUDGET_KEY);
+      if (!alive) return;
+      if (raw != null && raw.trim() !== '') setOverallBudgetStr(raw);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [getRawSetting]);
+
   const ym = currentMonthPrefix();
+  const categoryCapsSum = useMemo(() => budgets.reduce((s, b) => s + b.monthlyLimit, 0), [budgets]);
+  const overallParsed = useMemo(() => parseAmount(overallBudgetStr.trim()), [overallBudgetStr]);
   const rows = useMemo(() => {
     const monthExp = expensesInMonth(expenses, ym);
     return budgets.map((b) => {
@@ -127,6 +153,38 @@ export default function BudgetsScreen() {
       await upsertBudget(category, lim);
       void hapticSuccess();
       setLimitStr('');
+    })();
+  };
+
+  const saveOverallBudget = () => {
+    const lim = parseAmount(overallBudgetStr);
+    if (lim === null || lim <= 0) {
+      Alert.alert('Overall budget', 'Enter a positive total for the month.');
+      return;
+    }
+    void (async () => {
+      await setRawSetting(OVERALL_BUDGET_KEY, String(lim));
+      void hapticSuccess();
+    })();
+  };
+
+  const splitOverallAcrossCategories = () => {
+    const total = parseAmount(overallBudgetStr.trim());
+    if (total === null || total <= 0) {
+      Alert.alert('Overall budget', 'Set and save a positive overall monthly budget first.');
+      return;
+    }
+    const cats = expenseCategoryOptions;
+    if (cats.length === 0) {
+      Alert.alert('Categories', 'No expense categories available.');
+      return;
+    }
+    const shares = splitTotalEvenly(total, cats.length);
+    void (async () => {
+      for (let i = 0; i < cats.length; i++) {
+        await upsertBudget(cats[i]!, shares[i]!);
+      }
+      void hapticSuccess();
     })();
   };
 
@@ -335,6 +393,58 @@ export default function BudgetsScreen() {
                   </Text>
                 </View>
               </Pressable>
+            </PressableCard>
+
+            <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Overall monthly budget">
+              <View style={styles.titleRow}>
+                <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Overall monthly budget</Text>
+              </View>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: space[1] }]}>
+                Set your total spending cap for the month, then split it evenly across every expense category.
+              </Text>
+              <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
+                Total for {ym}
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={overallBudgetStr}
+                onChangeText={setOverallBudgetStr}
+              />
+              <Pressable
+                style={({ pressed }) => [styles.btn, { backgroundColor: colors.accent }, pressed && { opacity: 0.9 }]}
+                onPress={saveOverallBudget}
+                accessibilityRole="button"
+                accessibilityLabel="Save overall monthly budget"
+              >
+                <Text style={styles.btnText}>Save overall budget</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.btn,
+                  { backgroundColor: colors.income, marginTop: space[1] },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={splitOverallAcrossCategories}
+                accessibilityRole="button"
+                accessibilityLabel="Split overall budget evenly across categories"
+              >
+                <Text style={styles.btnText}>Split evenly across categories</Text>
+              </Pressable>
+              {budgets.length > 0 ? (
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] + 2 }]}>
+                  Category caps now sum to {formatMoney(categoryCapsSum, settings.currency)}
+                  {overallParsed != null && overallParsed > 0
+                    ? ` · overall ${formatMoney(overallParsed, settings.currency)}`
+                    : ''}
+                </Text>
+              ) : null}
             </PressableCard>
 
             <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Add or update budget">
