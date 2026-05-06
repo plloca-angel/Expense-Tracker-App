@@ -24,6 +24,17 @@ export function currentMonthPrefix(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** ISO date YYYY-MM-DD plus `days` (calendar). */
+export function addCalendarDaysISO(iso: string, days: number): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  const t = new Date(y, m - 1, d);
+  t.setDate(t.getDate() + days);
+  const y2 = t.getFullYear();
+  const m2 = String(t.getMonth() + 1).padStart(2, '0');
+  const d2 = String(t.getDate()).padStart(2, '0');
+  return `${y2}-${m2}-${d2}`;
+}
+
 export function expensesInMonth(expenses: { date: string; amount: number; category: string }[], ym: string) {
   return expenses.filter((e) => e.date.slice(0, 7) === ym);
 }

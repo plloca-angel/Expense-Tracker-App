@@ -6,4 +6,6 @@ export type Expense = {
   note: string | null;
   date: string;
   createdAt: string;
+  splitGroupId: string | null;
+  receiptUri: string | null;
 };

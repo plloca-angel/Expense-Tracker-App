@@ -17,7 +17,7 @@ import * as Sharing from 'expo-sharing';
 import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import type { BackupPayload } from '../../src/lib/backup';
-import { parseBackupJson } from '../../src/lib/backup';
+import { dryRunImport, parseBackupJson, validateBackupPayload } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
 import type { ThemePreference } from '../../src/types/settings';
 
@@ -117,9 +117,23 @@ export default function SettingsScreen() {
     try {
       const raw = await FileSystem.readAsStringAsync(uri, { encoding: 'utf8' });
       const data = parseBackupJson(raw);
+      const errs = validateBackupPayload(data);
+      if (errs.length > 0) {
+        Alert.alert('Invalid backup', errs.slice(0, 6).join('\n'));
+        return;
+      }
+      const plan = dryRunImport(data);
+      const summary = [
+        `${plan.expenses} expenses (${plan.splitGroups} split payments)`,
+        `${plan.incomes} income`,
+        `${plan.budgets} budgets`,
+        `${plan.savingsGoals} savings goals`,
+        `${plan.recurringRules} recurring rules`,
+        `${plan.customCategories} custom categories`,
+      ].join('\n');
       Alert.alert(
         'Replace all data?',
-        'This overwrites expenses, income, budgets, goals, categories, and settings. This cannot be undone.',
+        `Dry run OK (v${plan.version}).\n\n${summary}\n\nThis overwrites everything on device. Cannot be undone.`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
@@ -232,8 +246,9 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Full backup (JSON)</Text>
           <Text style={[styles.backupHint, { color: colors.textMuted }]}>
-            Includes transactions, budgets, savings goals, custom categories, and app settings. Use import on a new
-            device to restore.
+            Includes transactions (splits + receipt paths), recurring rules, budgets, savings goals, custom categories,
+            and app settings. Import runs a dry-run check before replacing data. Receipt image files are not included —
+            only paths stored on this device.
           </Text>
           <Pressable
             style={[styles.exportBtn, { backgroundColor: colors.income, marginBottom: 10 }]}

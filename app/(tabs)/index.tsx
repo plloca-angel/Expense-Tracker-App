@@ -1,4 +1,5 @@
 import { BarChart, PieChart } from 'react-native-gifted-charts';
+import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,13 +25,19 @@ import {
   spendChangeVsPreviousMonth,
   topCategoryShare,
 } from '../../src/lib/insights';
-import { formatMoney } from '../../src/lib/money';
-import { currentMonthPrefix, expensesInMonth, filterByPeriod, type PeriodFilter } from '../../src/lib/period';
+import { formatMoney, todayISODate } from '../../src/lib/money';
+import {
+  addCalendarDaysISO,
+  currentMonthPrefix,
+  expensesInMonth,
+  filterByPeriod,
+  type PeriodFilter,
+} from '../../src/lib/period';
 
 const screenW = Dimensions.get('window').width;
 
 export default function OverviewScreen() {
-  const { ready, colors, settings, expenses, incomes, budgets, goals, refresh } = useFinance();
+  const { ready, colors, settings, expenses, incomes, budgets, goals, recurringRules, refresh } = useFinance();
   const [period, setPeriod] = useState<PeriodFilter>('month');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -80,6 +87,13 @@ export default function OverviewScreen() {
   const avgDaily = averageDailySpend(expenses, period);
   const topShare = topCategoryShare(expenses, period);
   const vsPrev = period === 'month' ? spendChangeVsPreviousMonth(expenses, ym) : null;
+
+  const dueHorizon = addCalendarDaysISO(todayISODate(), 7);
+  const dueSoon = useMemo(() => {
+    return recurringRules
+      .filter((r) => r.nextDue <= dueHorizon)
+      .sort((a, b) => a.nextDue.localeCompare(b.nextDue));
+  }, [recurringRules, dueHorizon]);
 
   if (!ready) {
     return (
@@ -153,7 +167,40 @@ export default function OverviewScreen() {
             {fExpenses.length} expense{fExpenses.length === 1 ? '' : 's'} · {fIncomes.length} income
             {fIncomes.length === 1 ? '' : 's'}
           </Text>
+          <Pressable
+            onPress={() => router.push('/month-snapshot')}
+            style={[styles.snapshotBtn, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.snapshotBtnText, { color: colors.accent }]}>Month snapshot · share</Text>
+          </Pressable>
         </View>
+
+        {dueSoon.length > 0 ? (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Due soon (7 days)</Text>
+            <Text style={[styles.dueHint, { color: colors.textMuted }]}>
+              From recurring rules in Plans — post when paid without waiting for notifications.
+            </Text>
+            {dueSoon.slice(0, 5).map((r) => (
+              <View key={r.id} style={[styles.dueRow, { borderColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.dueAmt, { color: colors.text }]}>
+                    {r.kind === 'expense' ? '−' : '+'}
+                    {formatMoney(r.amount, settings.currency)} · {r.category}
+                  </Text>
+                  <Text style={[styles.dueMeta, { color: colors.textMuted }]}>
+                    Next {r.nextDue} · {r.frequency}
+                  </Text>
+                </View>
+              </View>
+            ))}
+            {dueSoon.length > 5 ? (
+              <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 6 }}>
+                +{dueSoon.length - 5} more in Plans → Recurring
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Insights</Text>
@@ -321,6 +368,18 @@ const styles = StyleSheet.create({
   netLabel: { fontSize: 16, fontWeight: '600' },
   netValue: { fontSize: 22, fontWeight: '800' },
   heroHint: { marginTop: 10, fontSize: 13 },
+  snapshotBtn: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  snapshotBtnText: { fontSize: 14, fontWeight: '700' },
+  dueHint: { fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  dueRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  dueAmt: { fontSize: 15, fontWeight: '600' },
+  dueMeta: { fontSize: 13, marginTop: 4 },
   card: { borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 1 },
   cardTitle: { fontSize: 17, fontWeight: '600', marginBottom: 12 },
   empty: { fontSize: 15, lineHeight: 22 },

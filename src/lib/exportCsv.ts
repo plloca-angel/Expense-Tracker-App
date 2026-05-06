@@ -7,7 +7,7 @@ function esc(s: string): string {
 }
 
 export function buildFinanceCsv(expenses: Expense[], incomes: Income[]): string {
-  const lines: string[] = ['type,date,amount,category,tag,note,created_at'];
+  const lines: string[] = ['type,date,amount,category,tag,note,created_at,split_group_id,receipt_uri'];
 
   for (const e of expenses) {
     lines.push(
@@ -19,6 +19,8 @@ export function buildFinanceCsv(expenses: Expense[], incomes: Income[]): string 
         esc(e.tag ?? ''),
         esc(e.note ?? ''),
         e.createdAt,
+        esc(e.splitGroupId ?? ''),
+        esc(e.receiptUri ?? ''),
       ].join(',')
     );
   }
@@ -32,6 +34,8 @@ export function buildFinanceCsv(expenses: Expense[], incomes: Income[]): string 
         esc(i.tag ?? ''),
         esc(i.note ?? ''),
         i.createdAt,
+        '',
+        '',
       ].join(',')
     );
   }

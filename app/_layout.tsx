@@ -8,7 +8,20 @@ function ThemedRoot() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="month-snapshot"
+          options={{
+            headerShown: true,
+            title: 'Month snapshot',
+            headerStyle: { backgroundColor: colors.headerBg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: '600', color: colors.text, fontSize: 18 },
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        />
+      </Stack>
     </View>
   );
 }

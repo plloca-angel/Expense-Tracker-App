@@ -14,9 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
-import { formatMoney, parseAmount } from '../../src/lib/money';
+import { formatMoney, parseAmount, todayISODate } from '../../src/lib/money';
 
-type TabMode = 'budgets' | 'goals';
+type TabMode = 'budgets' | 'goals' | 'recurring';
 
 export default function BudgetsScreen() {
   const {
@@ -29,9 +29,14 @@ export default function BudgetsScreen() {
     upsertBudget,
     removeBudget,
     expenseCategoryOptions,
+    incomeCategoryOptions,
     addGoal,
     updateGoalSaved,
     removeGoal,
+    recurringRules,
+    addRecurringRule,
+    removeRecurringRule,
+    postRecurringRule,
     refresh,
   } = useFinance();
   const [mode, setMode] = useState<TabMode>('budgets');
@@ -43,10 +48,27 @@ export default function BudgetsScreen() {
   const [savedDrafts, setSavedDrafts] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
 
+  const [recKind, setRecKind] = useState<'expense' | 'income'>('expense');
+  const [recAmt, setRecAmt] = useState('');
+  const [recCat, setRecCat] = useState(expenseCategoryOptions[0] ?? 'Other');
+  const [recFreq, setRecFreq] = useState<'weekly' | 'monthly'>('monthly');
+  const [recDom, setRecDom] = useState('1');
+  const [recWd, setRecWd] = useState('0');
+  const [recNext, setRecNext] = useState(todayISODate());
+  const [recTag, setRecTag] = useState('');
+  const [recNote, setRecNote] = useState('');
+
+  const recCategories = recKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
+
   useEffect(() => {
     const first = expenseCategoryOptions[0] ?? 'Other';
     if (!expenseCategoryOptions.includes(category)) setCategory(first);
   }, [expenseCategoryOptions, category]);
+
+  useEffect(() => {
+    const first = recCategories[0] ?? 'Other';
+    if (!recCategories.includes(recCat)) setRecCat(first);
+  }, [recCategories, recCat]);
 
   useEffect(() => {
     const next: Record<number, string> = {};
@@ -114,6 +136,59 @@ export default function BudgetsScreen() {
     ]);
   };
 
+  const addRecurring = () => {
+    const amt = parseAmount(recAmt);
+    if (amt === null) {
+      Alert.alert('Recurring', 'Enter a positive amount.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(recNext.trim())) {
+      Alert.alert('Recurring', 'Next due must be YYYY-MM-DD.');
+      return;
+    }
+    const dom = Number.parseInt(recDom, 10);
+    const wd = Number.parseInt(recWd, 10);
+    if (recFreq === 'monthly' && (!Number.isFinite(dom) || dom < 1 || dom > 31)) {
+      Alert.alert('Recurring', 'Day of month must be 1–31.');
+      return;
+    }
+    if (recFreq === 'weekly' && (!Number.isFinite(wd) || wd < 0 || wd > 6)) {
+      Alert.alert('Recurring', 'Weekday must be 0 (Sun) through 6 (Sat).');
+      return;
+    }
+    void (async () => {
+      await addRecurringRule({
+        kind: recKind,
+        amount: amt,
+        category: recCat,
+        tag: recTag.trim() || null,
+        note: recNote.trim() || null,
+        frequency: recFreq,
+        dayOfMonth: recFreq === 'monthly' ? dom : null,
+        weekday: recFreq === 'weekly' ? wd : null,
+        nextDue: recNext.trim(),
+      });
+      setRecAmt('');
+      setRecTag('');
+      setRecNote('');
+      setRecNext(todayISODate());
+    })();
+  };
+
+  const confirmRemoveRecurring = (id: number, label: string) => {
+    Alert.alert('Remove recurring', `Delete rule “${label}”?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void removeRecurringRule(id) },
+    ]);
+  };
+
+  const confirmPostRecurring = (id: number, label: string) => {
+    Alert.alert('Post now', `Add “${label}” for today and schedule the next occurrence?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Post', onPress: () => void postRecurringRule(id, todayISODate()) },
+    ]);
+  };
+
   const applySaved = (id: number) => {
     const raw = savedDrafts[id] ?? '0';
     const n = Number.parseFloat(raw.replace(/,/g, ''));
@@ -147,7 +222,8 @@ export default function BudgetsScreen() {
         {(
           [
             ['budgets', 'Budgets'],
-            ['goals', 'Savings goals'],
+            ['goals', 'Goals'],
+            ['recurring', 'Recurring'],
           ] as const
         ).map(([key, label]) => (
           <Pressable
@@ -258,7 +334,7 @@ export default function BudgetsScreen() {
               ))
             )}
           </>
-        ) : (
+        ) : mode === 'goals' ? (
           <>
             <Text style={[styles.hint, { color: colors.textMuted }]}>
               Track savings targets. Update “saved so far” as you set money aside (manual progress).
@@ -355,6 +431,192 @@ export default function BudgetsScreen() {
               })
             )}
           </>
+        ) : (
+          <>
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              Expected expenses or income. We show upcoming dues on Home; tap Post when you actually pay or receive.
+            </Text>
+
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>New recurring rule</Text>
+              <View style={styles.recKindRow}>
+                {(['expense', 'income'] as const).map((k) => (
+                  <Pressable
+                    key={k}
+                    onPress={() => setRecKind(k)}
+                    style={[
+                      styles.recKindBtn,
+                      { borderColor: colors.border },
+                      recKind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.recKindText,
+                        { color: colors.textSecondary },
+                        recKind === k && { color: '#fff', fontWeight: '700' },
+                      ]}
+                    >
+                      {k === 'expense' ? 'Expense' : 'Income'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                value={recAmt}
+                onChangeText={setRecAmt}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <View style={styles.chips}>
+                {recCategories.map((c) => {
+                  const active = c === recCat;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => setRecCat(c)}
+                      style={[
+                        styles.chip,
+                        { borderColor: colors.border, backgroundColor: colors.bg },
+                        active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: colors.textSecondary },
+                          active && { color: colors.accent, fontWeight: '700' },
+                        ]}
+                      >
+                        {c}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Frequency</Text>
+              <View style={styles.recKindRow}>
+                {(['monthly', 'weekly'] as const).map((f) => (
+                  <Pressable
+                    key={f}
+                    onPress={() => setRecFreq(f)}
+                    style={[
+                      styles.recKindBtn,
+                      { borderColor: colors.border },
+                      recFreq === f && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.recKindText,
+                        { color: colors.textSecondary },
+                        recFreq === f && { color: colors.accent, fontWeight: '700' },
+                      ]}
+                    >
+                      {f === 'monthly' ? 'Monthly' : 'Weekly'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {recFreq === 'monthly' ? (
+                <>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Day of month (1–31)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                    ]}
+                    keyboardType="number-pad"
+                    value={recDom}
+                    onChangeText={setRecDom}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Weekday (0 Sun … 6 Sat)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                    ]}
+                    keyboardType="number-pad"
+                    value={recWd}
+                    onChangeText={setRecWd}
+                  />
+                </>
+              )}
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Next due (YYYY-MM-DD)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                value={recNext}
+                onChangeText={setRecNext}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                value={recTag}
+                onChangeText={setRecTag}
+              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
+                ]}
+                value={recNote}
+                onChangeText={setRecNote}
+              />
+              <Pressable style={[styles.btn, { backgroundColor: colors.accent }]} onPress={addRecurring}>
+                <Text style={styles.btnText}>Save rule</Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Your rules</Text>
+            {recurringRules.length === 0 ? (
+              <Text style={[styles.empty, { color: colors.textMuted }]}>No recurring items yet.</Text>
+            ) : (
+              recurringRules.map((r) => {
+                const lab = `${r.kind === 'expense' ? '−' : '+'}${formatMoney(r.amount, settings.currency)} ${r.category}`;
+                return (
+                  <View key={r.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={styles.rowTop}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.cat, { color: colors.text }]}>{lab}</Text>
+                        <Text style={[styles.nums, { color: colors.textMuted }]}>
+                          Next {r.nextDue} · {r.frequency}
+                          {r.tag ? ` · ${r.tag}` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.recActions}>
+                      <Pressable
+                        style={[styles.postBtn, { backgroundColor: colors.income }]}
+                        onPress={() => confirmPostRecurring(r.id, lab)}
+                      >
+                        <Text style={styles.postBtnText}>Post now</Text>
+                      </Pressable>
+                      <Pressable onPress={() => confirmRemoveRecurring(r.id, lab)} hitSlop={8}>
+                        <Ionicons name="trash-outline" size={22} color={colors.danger} />
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -398,4 +660,10 @@ const styles = StyleSheet.create({
   savedInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   applyBtn: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
   applyBtnText: { color: '#fff', fontWeight: '700' },
+  recKindRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  recKindBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  recKindText: { fontSize: 14 },
+  recActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
+  postBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12 },
+  postBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

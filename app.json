@@ -29,7 +29,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to attach a receipt image. Photos stay on this device only."
+        }
+      ]
     ]
   }
 }
