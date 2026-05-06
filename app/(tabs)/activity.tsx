@@ -31,6 +31,7 @@ import {
   splitGroupTotal,
   type ActivityUnifiedRow,
 } from '../../src/lib/activityGroups';
+import { categoryGlyph, categoryIconColor } from '../../src/lib/categoryIcons';
 import { addCalendarDaysISO, filterByPeriod, type PeriodDateRange, type PeriodFilter } from '../../src/lib/period';
 import { formatISODateMedium, formatMoney, parseISODateLocal, todayISODate, toISODateString } from '../../src/lib/money';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
@@ -342,7 +343,7 @@ export default function ActivityScreen() {
             accessibilityLabel={`Income, ${d.category}`}
           >
             <View style={styles.rowIcon}>
-              <Ionicons name="arrow-up-circle" size={28} color={colors.income} />
+              <Ionicons name={categoryGlyph(d.category, 'income')} size={28} color={categoryIconColor(d.category, 'income')} />
             </View>
             <View style={styles.rowMain}>
               <Text style={[typeStyles.title, { color: colors.text }]}>+{formatMoney(d.amount, settings.currency)}</Text>
@@ -399,7 +400,7 @@ export default function ActivityScreen() {
             accessibilityLabel={`Expense, ${d.category}`}
           >
             <View style={styles.rowIcon}>
-              <Ionicons name="arrow-down-circle" size={28} color={colors.expense} />
+              <Ionicons name={categoryGlyph(d.category, 'expense')} size={28} color={categoryIconColor(d.category, 'expense')} />
             </View>
             <View style={styles.rowMain}>
               <Text style={[typeStyles.title, { color: colors.text }]}>
@@ -480,12 +481,20 @@ export default function ActivityScreen() {
               Split · {lines.length} categories
             </Text>
             {lines.map((l) => (
-              <Text
+              <View
                 key={l.id}
-                style={[typeStyles.bodySmall, { color: colors.textSecondary, marginTop: space[1] / 4 }]}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: space[1] / 4,
+                }}
               >
-                {l.category}: {formatMoney(l.amount, settings.currency)}
-              </Text>
+                <Ionicons name={categoryGlyph(l.category, 'expense')} size={16} color={categoryIconColor(l.category, 'expense')} />
+                <Text style={[typeStyles.bodySmall, { color: colors.textSecondary, flex: 1 }]}>
+                  {l.category}: {formatMoney(l.amount, settings.currency)}
+                </Text>
+              </View>
             ))}
             <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
               {head.date}

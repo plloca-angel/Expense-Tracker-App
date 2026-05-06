@@ -415,6 +415,9 @@ export async function deleteCustomCategory(
   kind: 'expense' | 'income'
 ): Promise<void> {
   await db.runAsync('DELETE FROM custom_categories WHERE name = ? AND kind = ?', name, kind);
+  if (kind === 'expense') {
+    await db.runAsync('DELETE FROM budgets WHERE category = ?', name);
+  }
 }
 
 type GoalRow = {

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../src/context/FinanceContext';
+import { categoryGlyph, categoryIconColor } from '../src/lib/categoryIcons';
 import { parseAmount, todayISODate } from '../src/lib/money';
 import type { Expense } from '../src/types/expense';
 
@@ -147,6 +149,7 @@ export default function EditTransactionScreen() {
                     active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
                   ]}
                 >
+                  <Ionicons name={categoryGlyph(c, kind)} size={15} color={categoryIconColor(c, kind)} />
                   <Text
                     style={[
                       styles.chipText,
@@ -255,7 +258,15 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 14 },
   note: { minHeight: 80, textAlignVertical: 'top' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
   chipText: { fontSize: 14 },
   save: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },

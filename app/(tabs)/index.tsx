@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CATEGORY_CHART_COLORS } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { categoryGlyph, categoryIconColor } from '../../src/lib/categoryIcons';
 import { hapticLight } from '../../src/lib/haptics';
 import {
   byCategory,
@@ -494,7 +495,14 @@ export default function OverviewScreen() {
             {budgetRows.map((b) => (
               <View key={b.id} style={styles.budgetBlock}>
                 <View style={styles.budgetTop}>
-                  <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>{b.category}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+                    <Ionicons
+                      name={categoryGlyph(b.category, 'expense')}
+                      size={20}
+                      color={categoryIconColor(b.category, 'expense')}
+                    />
+                    <Text style={[typeStyles.bodyMedium, { color: colors.text, flex: 1 }]}>{b.category}</Text>
+                  </View>
                   <Text style={[typeStyles.caption, { color: colors.textMuted }]}>
                     {formatMoney(b.used, settings.currency)} / {formatMoney(b.monthlyLimit, settings.currency)}
                   </Text>
@@ -558,6 +566,11 @@ export default function OverviewScreen() {
                       styles.breakdownDot,
                       { backgroundColor: CATEGORY_CHART_COLORS[idx % CATEGORY_CHART_COLORS.length] },
                     ]}
+                  />
+                  <Ionicons
+                    name={categoryGlyph(item.category, 'expense')}
+                    size={17}
+                    color={categoryIconColor(item.category, 'expense')}
                   />
                   <Text style={[styles.breakdownCat, { color: colors.text }]}>{item.category}</Text>
                   <Text style={[styles.breakdownAmt, { color: colors.textSecondary }]}>
