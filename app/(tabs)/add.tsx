@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -14,12 +13,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../../src/context/FinanceContext';
+import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
 import { parseAmount, todayISODate } from '../../src/lib/money';
+import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 type EntryKind = 'expense' | 'income';
 
 export default function AddScreen() {
   const { colors, addExpense, addIncome, expenseCategoryOptions, incomeCategoryOptions } = useFinance();
+  useTabHeaderSubtitle('Add', 'New entry', colors);
   const [entryKind, setEntryKind] = useState<EntryKind>('expense');
   const [amount, setAmount] = useState('');
   const categories = entryKind === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
@@ -30,6 +33,7 @@ export default function AddScreen() {
   const [saving, setSaving] = useState(false);
 
   const onKindChange = (k: EntryKind) => {
+    void hapticLight();
     setEntryKind(k);
     const next = k === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
     setCategory(next[0] ?? 'Other');
@@ -56,11 +60,7 @@ export default function AddScreen() {
       };
       if (entryKind === 'expense') await addExpense(payload);
       else await addIncome(payload);
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {
-        /* haptics optional */
-      }
+      void hapticSuccess();
       setAmount('');
       setTag('');
       setNote('');
@@ -79,19 +79,20 @@ export default function AddScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
           <View style={styles.kindRow}>
             <Pressable
               onPress={() => onKindChange('expense')}
-              style={[
+              style={({ pressed }) => [
                 styles.kindBtn,
                 { borderColor: colors.border, backgroundColor: colors.card },
                 entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
+                pressed && { opacity: 0.92 },
               ]}
             >
               <Text
                 style={[
-                  styles.kindText,
+                  typeStyles.bodySmall,
                   { color: colors.text },
                   entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
                 ]}
@@ -101,15 +102,16 @@ export default function AddScreen() {
             </Pressable>
             <Pressable
               onPress={() => onKindChange('income')}
-              style={[
+              style={({ pressed }) => [
                 styles.kindBtn,
                 { borderColor: colors.border, backgroundColor: colors.card },
                 entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
+                pressed && { opacity: 0.92 },
               ]}
             >
               <Text
                 style={[
-                  styles.kindText,
+                  typeStyles.bodySmall,
                   { color: colors.text },
                   entryKind === 'income' && { color: colors.income, fontWeight: '700' },
                 ]}
@@ -119,11 +121,12 @@ export default function AddScreen() {
             </Pressable>
           </View>
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Amount</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Amount</Text>
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="0.00"
             placeholderTextColor={colors.textMuted}
@@ -132,23 +135,27 @@ export default function AddScreen() {
             onChangeText={setAmount}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
           <View style={styles.chips}>
             {categories.map((c) => {
               const active = c === category;
               return (
                 <Pressable
                   key={c}
-                  onPress={() => setCategory(c)}
-                  style={[
+                  onPress={() => {
+                    void hapticLight();
+                    setCategory(c);
+                  }}
+                  style={({ pressed }) => [
                     styles.chip,
-                    { borderColor: colors.border, backgroundColor: colors.card },
+                    surfaceCard(colors, false),
                     active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.chipText,
+                      typeStyles.bodySmall,
                       { color: colors.textSecondary },
                       active && { color: colors.accent, fontWeight: '700' },
                     ]}
@@ -160,11 +167,12 @@ export default function AddScreen() {
             })}
           </View>
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Tag (optional)</Text>
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="e.g. Business, Trip"
             placeholderTextColor={colors.textMuted}
@@ -172,11 +180,12 @@ export default function AddScreen() {
             onChangeText={setTag}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Date</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Date</Text>
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="YYYY-MM-DD"
             placeholderTextColor={colors.textMuted}
@@ -184,12 +193,13 @@ export default function AddScreen() {
             onChangeText={setDate}
           />
 
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
+          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
           <TextInput
             style={[
               styles.input,
               styles.noteInput,
-              { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
+              surfaceCard(colors, false),
+              { color: colors.text },
             ]}
             placeholder="Details"
             placeholderTextColor={colors.textMuted}
@@ -199,10 +209,11 @@ export default function AddScreen() {
           />
 
           <Pressable
-            style={[
+            style={({ pressed }) => [
               styles.saveBtn,
               { backgroundColor: colors.accent },
               saving && { opacity: 0.7 },
+              pressed && !saving && { opacity: 0.92 },
             ]}
             onPress={() => void onSave()}
             disabled={saving}
@@ -218,22 +229,27 @@ export default function AddScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 40 },
-  label: { fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 4 },
-  kindRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  scroll: { padding: space[3], paddingBottom: space[5] },
+  label: { marginBottom: space[1], marginTop: space[1] / 2 },
+  kindRow: { flexDirection: 'row', gap: space[1] + 4, marginBottom: space[2] },
   kindBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: space[2] - 2,
+    borderRadius: radii.lg - 2,
     borderWidth: 2,
     alignItems: 'center',
   },
-  kindText: { fontSize: 16 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, marginBottom: 16 },
+  input: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1] + 4,
+    fontSize: 16,
+    marginBottom: space[2],
+  },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 14 },
-  saveBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
+  chip: { paddingHorizontal: space[2] - 2, paddingVertical: space[1], borderRadius: radii.pill, borderWidth: 1 },
+  saveBtn: { borderRadius: radii.lg - 2, paddingVertical: space[2], alignItems: 'center', marginTop: space[1] },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

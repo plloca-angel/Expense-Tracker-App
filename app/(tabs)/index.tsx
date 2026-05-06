@@ -13,6 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CATEGORY_CHART_COLORS } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
+import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
+import { hapticLight } from '../../src/lib/haptics';
 import {
   byCategory,
   lastNDaysByDay,
@@ -26,6 +28,7 @@ import {
 } from '../../src/lib/insights';
 import { formatMoney } from '../../src/lib/money';
 import { currentMonthPrefix, expensesInMonth, filterByPeriod, type PeriodFilter } from '../../src/lib/period';
+import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 const screenW = Dimensions.get('window').width;
 
@@ -33,6 +36,10 @@ export default function OverviewScreen() {
   const { ready, colors, settings, expenses, incomes, budgets, goals, refresh } = useFinance();
   const [period, setPeriod] = useState<PeriodFilter>('month');
   const [refreshing, setRefreshing] = useState(false);
+
+  const headerSubtitle =
+    period === 'month' ? 'This month' : period === '30d' ? 'Last 30 days' : 'All time';
+  useTabHeaderSubtitle('Overview', headerSubtitle, colors);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -85,7 +92,9 @@ export default function OverviewScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading your data…</Text>
+        <Text style={[typeStyles.body, styles.loadingText, { color: colors.textMuted }]}>
+          Loading your data…
+        </Text>
       </View>
     );
   }
@@ -111,16 +120,20 @@ export default function OverviewScreen() {
             return (
               <Pressable
                 key={key}
-                onPress={() => setPeriod(key)}
-                style={[
+                onPress={() => {
+                  void hapticLight();
+                  setPeriod(key);
+                }}
+                style={({ pressed }) => [
                   styles.periodChip,
                   { borderColor: colors.border, backgroundColor: colors.card },
                   active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  pressed && { opacity: 0.85 },
                 ]}
               >
                 <Text
                   style={[
-                    styles.periodChipText,
+                    typeStyles.captionMedium,
                     { color: colors.textSecondary },
                     active && { color: colors.accent, fontWeight: '700' },
                   ]}
@@ -132,37 +145,41 @@ export default function OverviewScreen() {
           })}
         </View>
 
-        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.hero, surfaceCard(colors, true)]}>
           <View style={styles.heroGrid}>
             <View style={styles.heroCell}>
-              <Text style={[styles.heroLabel, { color: colors.textMuted }]}>Expenses</Text>
-              <Text style={[styles.heroAmount, { color: colors.expense }]}>{formatMoney(spent, settings.currency)}</Text>
+              <Text style={[typeStyles.captionMedium, { color: colors.textMuted }]}>Expenses</Text>
+              <Text style={[typeStyles.titleLarge, { color: colors.expense, marginTop: space[1] / 2 }]}>
+                {formatMoney(spent, settings.currency)}
+              </Text>
             </View>
             <View style={styles.heroCell}>
-              <Text style={[styles.heroLabel, { color: colors.textMuted }]}>Income</Text>
-              <Text style={[styles.heroAmount, { color: colors.income }]}>{formatMoney(earned, settings.currency)}</Text>
+              <Text style={[typeStyles.captionMedium, { color: colors.textMuted }]}>Income</Text>
+              <Text style={[typeStyles.titleLarge, { color: colors.income, marginTop: space[1] / 2 }]}>
+                {formatMoney(earned, settings.currency)}
+              </Text>
             </View>
           </View>
           <View style={[styles.netRow, { borderTopColor: colors.border }]}>
-            <Text style={[styles.netLabel, { color: colors.textSecondary }]}>Net</Text>
+            <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary }]}>Net</Text>
             <Text style={[styles.netValue, { color: net >= 0 ? colors.income : colors.expense }]}>
               {formatMoney(net, settings.currency)}
             </Text>
           </View>
-          <Text style={[styles.heroHint, { color: colors.textMuted }]}>
+          <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] + 2 }]}>
             {fExpenses.length} expense{fExpenses.length === 1 ? '' : 's'} · {fIncomes.length} income
             {fIncomes.length === 1 ? '' : 's'}
           </Text>
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>Insights</Text>
-          <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+        <View style={[styles.card, surfaceCard(colors, true)]}>
+          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Insights</Text>
+          <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textSecondary }]}>
             Avg spend / day ({period === 'month' ? 'this month' : period === '30d' ? 'last 30 days' : 'all time'}):{' '}
             <Text style={{ fontWeight: '700', color: colors.text }}>{formatMoney(avgDaily, settings.currency)}</Text>
           </Text>
           {topShare ? (
-            <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+            <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textSecondary }]}>
               Top category:{' '}
               <Text style={{ fontWeight: '700', color: colors.text }}>
                 {topShare.category} ({Math.round(topShare.share * 100)}%)
@@ -170,7 +187,7 @@ export default function OverviewScreen() {
             </Text>
           ) : null}
           {vsPrev && vsPrev.pctChange !== null ? (
-            <Text style={[styles.insightLine, { color: colors.textSecondary }]}>
+            <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textSecondary }]}>
               vs {vsPrev.prevYm}:{' '}
               <Text
                 style={{
@@ -183,43 +200,47 @@ export default function OverviewScreen() {
               </Text>
             </Text>
           ) : vsPrev && period === 'month' ? (
-            <Text style={[styles.insightLine, { color: colors.textMuted }]}>No prior month to compare.</Text>
+            <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textMuted }]}>
+              No prior month to compare.
+            </Text>
           ) : null}
         </View>
 
         {goals.length > 0 ? (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Savings goals</Text>
+          <View style={[styles.card, surfaceCard(colors, true)]}>
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Savings goals</Text>
             {goals.slice(0, 3).map((g) => {
               const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
               return (
                 <View key={g.id} style={styles.goalPreview}>
-                  <Text style={[styles.goalName, { color: colors.text }]}>{g.name}</Text>
+                  <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>{g.name}</Text>
                   <View style={[styles.progressTrack, { backgroundColor: colors.bgElevated }]}>
                     <View
                       style={[styles.progressFill, { width: `${pct}%`, backgroundColor: colors.income }]}
                     />
                   </View>
-                  <Text style={[styles.goalSub, { color: colors.textMuted }]}>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted }]}>
                     {formatMoney(g.savedAmount, settings.currency)} / {formatMoney(g.targetAmount, settings.currency)}
                   </Text>
                 </View>
               );
             })}
             {goals.length > 3 ? (
-              <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 6 }}>+{goals.length - 3} more in Budgets</Text>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 + 2 }]}>
+                +{goals.length - 3} more in Budgets
+              </Text>
             ) : null}
           </View>
         ) : null}
 
         {budgetRows.length > 0 ? (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Budgets · {ym}</Text>
+          <View style={[styles.card, surfaceCard(colors, true)]}>
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Budgets · {ym}</Text>
             {budgetRows.map((b) => (
               <View key={b.id} style={styles.budgetBlock}>
                 <View style={styles.budgetTop}>
-                  <Text style={[styles.budgetCat, { color: colors.text }]}>{b.category}</Text>
-                  <Text style={[styles.budgetNums, { color: colors.textMuted }]}>
+                  <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>{b.category}</Text>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted }]}>
                     {formatMoney(b.used, settings.currency)} / {formatMoney(b.monthlyLimit, settings.currency)}
                   </Text>
                 </View>
@@ -232,17 +253,19 @@ export default function OverviewScreen() {
                   />
                 </View>
                 {b.over ? (
-                  <Text style={[styles.overBudget, { color: colors.expense }]}>Over budget</Text>
+                  <Text style={[typeStyles.captionMedium, { color: colors.expense, marginTop: space[1] / 2, fontWeight: '600' }]}>
+                    Over budget
+                  </Text>
                 ) : null}
               </View>
             ))}
           </View>
         ) : null}
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>By category</Text>
+        <View style={[styles.card, surfaceCard(colors, true)]}>
+          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>By category</Text>
           {pieData.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textMuted }]}>
+            <Text style={[typeStyles.body, styles.empty, { color: colors.textMuted }]}>
               No expenses in this period — add entries or widen the range.
             </Text>
           ) : (
@@ -263,10 +286,10 @@ export default function OverviewScreen() {
           )}
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>Spending · last 7 days</Text>
+        <View style={[styles.card, surfaceCard(colors, true)]}>
+          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Spending · last 7 days</Text>
           {fExpenses.length === 0 ? (
-            <Text style={[styles.empty, { color: colors.textMuted }]}>No data in this period.</Text>
+            <Text style={[typeStyles.body, styles.empty, { color: colors.textMuted }]}>No data in this period.</Text>
           ) : (
             <BarChart
               data={barData}
@@ -294,46 +317,36 @@ export default function OverviewScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 32 },
+  scroll: { paddingHorizontal: space[3], paddingTop: space[2], paddingBottom: space[4] },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 15 },
-  periodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  loadingText: { marginTop: space[1] + 4 },
+  periodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
   periodChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: space[2] - 2,
+    paddingVertical: space[1],
+    borderRadius: radii.pill,
     borderWidth: 1,
   },
-  periodChipText: { fontSize: 13 },
-  hero: { borderRadius: 16, padding: 22, marginBottom: 16, borderWidth: 1 },
-  heroGrid: { flexDirection: 'row', gap: 16 },
+  hero: { padding: space[3], marginBottom: space[2] },
+  heroGrid: { flexDirection: 'row', gap: space[2] },
   heroCell: { flex: 1 },
-  heroLabel: { fontSize: 13, fontWeight: '500' },
-  heroAmount: { fontSize: 22, fontWeight: '700', marginTop: 6 },
   netRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: space[2],
+    paddingTop: space[2],
     borderTopWidth: 1,
   },
-  netLabel: { fontSize: 16, fontWeight: '600' },
-  netValue: { fontSize: 22, fontWeight: '800' },
-  heroHint: { marginTop: 10, fontSize: 13 },
-  card: { borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 1 },
-  cardTitle: { fontSize: 17, fontWeight: '600', marginBottom: 12 },
-  empty: { fontSize: 15, lineHeight: 22 },
-  pieWrap: { alignItems: 'center', paddingVertical: 8 },
-  budgetBlock: { marginBottom: 14 },
-  budgetTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  budgetCat: { fontWeight: '600' },
-  budgetNums: { fontSize: 13 },
-  progressTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 4 },
-  overBudget: { fontSize: 12, marginTop: 4, fontWeight: '600' },
-  insightLine: { fontSize: 14, lineHeight: 22, marginBottom: 6 },
-  goalPreview: { marginBottom: 12 },
-  goalName: { fontWeight: '600', marginBottom: 6 },
-  goalSub: { fontSize: 12, marginTop: 4 },
+  netValue: { fontSize: 22, lineHeight: 28, fontWeight: '800' },
+  card: { padding: space[2], marginBottom: space[2] },
+  cardTitle: { marginBottom: space[1] + 4 },
+  empty: {},
+  pieWrap: { alignItems: 'center', paddingVertical: space[1] },
+  budgetBlock: { marginBottom: space[2] - 2 },
+  budgetTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: space[1] - 2 },
+  progressTrack: { height: space[1], borderRadius: radii.sm / 2, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: radii.sm / 2 },
+  insightLine: { marginBottom: space[1] - 2 },
+  goalPreview: { marginBottom: space[1] + 4 },
 });
