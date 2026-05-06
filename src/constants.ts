@@ -25,7 +25,7 @@ export const COMMON_CURRENCIES = [
   'CAD',
   'AUD',
   'CHF',
-  'MXN',
-  'INR',
+  'MKD',
+  'ALL',
   'BRL',
 ] as const;
