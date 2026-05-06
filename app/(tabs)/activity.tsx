@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,11 +39,24 @@ import type { Income } from '../../src/types/income';
 type FilterKind = 'all' | 'expense' | 'income';
 
 export default function ActivityScreen() {
-  const { category: paramCategory, accountId: paramAccount } = useLocalSearchParams<{
+  const { category: paramCategory, accountId: paramAccount, date: paramDate } = useLocalSearchParams<{
     category?: string;
     accountId?: string;
+    date?: string;
   }>();
-  const { ready, colors, settings, expenses, incomes, accounts, removeExpense, removeIncome, refresh } =
+  const {
+    ready,
+    colors,
+    settings,
+    expenses,
+    incomes,
+    accounts,
+    removeExpense,
+    removeIncome,
+    refresh,
+    getRawSetting,
+    setRawSetting,
+  } = useFinance();
     useFinance();
   const [kind, setKind] = useState<FilterKind>('all');
   const [period, setPeriod] = useState<PeriodFilter>('all');
@@ -53,6 +66,90 @@ export default function ActivityScreen() {
   const [customTo, setCustomTo] = useState(() => todayISODate());
   const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
   const [receiptPreviewUri, setReceiptPreviewUri] = useState<string | null>(null);
+  const [hasReceiptOnly, setHasReceiptOnly] = useState(false);
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [tagQuery, setTagQuery] = useState('');
+  const [accountFilterId, setAccountFilterId] = useState<number | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [presets, setPresets] = useState<{ name: string; value: string }[]>([]);
+  const [saveName, setSaveName] = useState('');
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const raw = await getRawSetting('activity_filter_presets');
+      if (!alive) return;
+      if (!raw) return;
+      try {
+        const arr = JSON.parse(raw) as { name: string; value: string }[];
+        if (Array.isArray(arr)) setPresets(arr.filter((x) => typeof x?.name === 'string' && typeof x?.value === 'string'));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [getRawSetting]);
+
+  const savePreset = useCallback(async () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const value = JSON.stringify({
+      kind,
+      period,
+      search,
+      hasReceiptOnly,
+      customFrom,
+      customTo,
+      minAmount,
+      maxAmount,
+      tagQuery,
+      accountFilterId,
+    });
+    const next = [{ name, value }, ...presets.filter((p) => p.name !== name)].slice(0, 12);
+    setPresets(next);
+    setSaveName('');
+    await setRawSetting('activity_filter_presets', JSON.stringify(next));
+  }, [
+    saveName,
+    kind,
+    period,
+    search,
+    hasReceiptOnly,
+    customFrom,
+    customTo,
+    minAmount,
+    maxAmount,
+    tagQuery,
+    accountFilterId,
+    presets,
+    setRawSetting,
+  ]);
+
+  const applyPreset = useCallback(
+    (value: string) => {
+      try {
+        const v = JSON.parse(value) as Record<string, unknown>;
+        runLayoutAnimation();
+        if (v.kind === 'all' || v.kind === 'expense' || v.kind === 'income') setKind(v.kind);
+        if (v.period === 'all' || v.period === '30d' || v.period === 'custom' || v.period === 'month') setPeriod(v.period);
+        if (typeof v.search === 'string') setSearch(v.search);
+        if (typeof v.hasReceiptOnly === 'boolean') setHasReceiptOnly(v.hasReceiptOnly);
+        if (typeof v.customFrom === 'string') setCustomFrom(v.customFrom);
+        if (typeof v.customTo === 'string') setCustomTo(v.customTo);
+        if (typeof v.minAmount === 'string') setMinAmount(v.minAmount);
+        if (typeof v.maxAmount === 'string') setMaxAmount(v.maxAmount);
+        if (typeof v.tagQuery === 'string') setTagQuery(v.tagQuery);
+        if (typeof v.accountFilterId === 'number' || v.accountFilterId === null) setAccountFilterId(v.accountFilterId as number | null);
+      } catch {
+        // ignore
+      }
+    },
+    [setKind, setPeriod]
+  );
 
   const accountNameById = useMemo(
     () => new Map(accounts.map((a) => [a.id, a.name] as const)),
@@ -72,10 +169,11 @@ export default function ActivityScreen() {
     const filterBits: string[] = [];
     if (paramCategory) filterBits.push(`Category: ${paramCategory}`);
     if (paramAccount) filterBits.push('Account');
+    if (paramDate) filterBits.push(`Date: ${paramDate}`);
     const filterNote = filterBits.length ? ` · ${filterBits.join(' · ')}` : '';
     const searchNote = search.trim() ? ' · Search' : '';
     return `${kindLabel} · ${periodLabel}${filterNote}${searchNote}`;
-  }, [kind, period, search, paramCategory, paramAccount]);
+  }, [kind, period, search, paramCategory, paramAccount, paramDate]);
 
   useTabHeaderSubtitle('Activity', headerSubtitle, colors);
 
@@ -100,6 +198,36 @@ export default function ActivityScreen() {
   const data = useMemo(() => {
     let ex = filterByPeriod(expenses, period, customRange);
     let inc = filterByPeriod(incomes, period, customRange);
+    if (hasReceiptOnly) {
+      ex = filterExpensesGroupAware(ex, (e) => Boolean(e.receiptUri));
+    }
+    const min = Number.parseFloat(minAmount.trim());
+    const max = Number.parseFloat(maxAmount.trim());
+    const hasMin = Number.isFinite(min);
+    const hasMax = Number.isFinite(max);
+    const tq = tagQuery.trim().toLowerCase();
+    if (hasMin || hasMax || tq || accountFilterId != null) {
+      ex = filterExpensesGroupAware(ex, (e) => {
+        if (hasMin && e.amount < min) return false;
+        if (hasMax && e.amount > max) return false;
+        if (tq) {
+          const t = `${e.tag ?? ''} ${e.note ?? ''}`.toLowerCase();
+          if (!t.includes(tq)) return false;
+        }
+        if (accountFilterId != null && e.accountId !== accountFilterId) return false;
+        return true;
+      });
+      inc = inc.filter((i) => {
+        if (hasMin && i.amount < min) return false;
+        if (hasMax && i.amount > max) return false;
+        if (tq) {
+          const t = `${i.tag ?? ''} ${i.note ?? ''}`.toLowerCase();
+          if (!t.includes(tq)) return false;
+        }
+        if (accountFilterId != null && i.accountId !== accountFilterId) return false;
+        return true;
+      });
+    }
     if (paramCategory) {
       const c = String(paramCategory);
       ex = filterExpensesGroupAware(ex, (e) => e.category === c);
@@ -110,6 +238,14 @@ export default function ActivityScreen() {
       if (Number.isFinite(aid)) {
         ex = filterExpensesGroupAware(ex, (e) => e.accountId === aid);
         inc = inc.filter((i) => i.accountId === aid);
+      }
+    }
+    if (paramDate) {
+      const d = String(paramDate).slice(0, 10);
+      const re = /^\d{4}-\d{2}-\d{2}$/;
+      if (re.test(d)) {
+        ex = filterExpensesGroupAware(ex, (e) => e.date.slice(0, 10) === d);
+        inc = inc.filter((i) => i.date.slice(0, 10) === d);
       }
     }
     const q = search.trim();
@@ -123,7 +259,22 @@ export default function ActivityScreen() {
       inc = inc.filter(matchInc);
     }
     return buildActivityRows(kind === 'income' ? [] : ex, kind === 'expense' ? [] : inc);
-  }, [expenses, incomes, kind, period, search, paramCategory, paramAccount, customRange]);
+  }, [
+    expenses,
+    incomes,
+    kind,
+    period,
+    search,
+    paramCategory,
+    paramAccount,
+    paramDate,
+    customRange,
+    hasReceiptOnly,
+    minAmount,
+    maxAmount,
+    tagQuery,
+    accountFilterId,
+  ]);
 
   const confirmDelete = useCallback(
     (row: ActivityUnifiedRow) => {
@@ -616,6 +767,183 @@ export default function ActivityScreen() {
               ) : null}
             </View>
 
+            <View style={styles.segmentRow}>
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  runLayoutAnimation();
+                  setHasReceiptOnly((v) => !v);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: hasReceiptOnly }}
+                accessibilityLabel={hasReceiptOnly ? 'Showing receipts only' : 'Show receipts only'}
+                style={({ pressed }) => [
+                  styles.segBtn,
+                  { borderColor: colors.border },
+                  hasReceiptOnly && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                  pressed && { opacity: 0.88 },
+                ]}
+              >
+                <View style={styles.segContent}>
+                  <Ionicons
+                    name={hasReceiptOnly ? 'receipt' : 'receipt-outline'}
+                    size={16}
+                    color={hasReceiptOnly ? colors.accent : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      typeStyles.captionMedium,
+                      { color: colors.textSecondary },
+                      hasReceiptOnly && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    Receipts
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/receipts')}
+                accessibilityRole="button"
+                accessibilityLabel="Open receipt gallery"
+                style={({ pressed }) => [
+                  styles.segBtn,
+                  { borderColor: colors.border },
+                  pressed && { opacity: 0.88 },
+                ]}
+              >
+                <View style={styles.segContent}>
+                  <Ionicons name="images-outline" size={16} color={colors.textSecondary} />
+                  <Text style={[typeStyles.captionMedium, { color: colors.textSecondary }]}>Gallery</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                runLayoutAnimation();
+                setShowAdvanced((v) => !v);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={showAdvanced ? 'Hide advanced filters' : 'Show advanced filters'}
+              style={({ pressed }) => [styles.advancedToggle, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons name={showAdvanced ? 'options' : 'options-outline'} size={18} color={colors.textMuted} />
+              <Text style={[typeStyles.bodySmall, { color: colors.textSecondary, fontWeight: '600' }]}>
+                Advanced filters
+              </Text>
+              <View style={{ flex: 1 }} />
+              <Ionicons name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+            </Pressable>
+
+            {showAdvanced ? (
+              <View style={styles.advancedBlock}>
+                <View style={styles.advancedRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>Min</Text>
+                    <TextInput
+                      value={minAmount}
+                      onChangeText={setMinAmount}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      style={[styles.advInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>Max</Text>
+                    <TextInput
+                      value={maxAmount}
+                      onChangeText={setMaxAmount}
+                      placeholder="∞"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      style={[styles.advInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                    />
+                  </View>
+                </View>
+
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>Tag / note</Text>
+                <TextInput
+                  value={tagQuery}
+                  onChangeText={setTagQuery}
+                  placeholder="e.g. recurring, trip"
+                  placeholderTextColor={colors.textMuted}
+                  style={[styles.advInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                />
+
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>Account</Text>
+                <View style={styles.segmentRow}>
+                  <Pressable
+                    onPress={() => {
+                      void hapticLight();
+                      runLayoutAnimation();
+                      setAccountFilterId(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.segBtn,
+                      { borderColor: colors.border },
+                      accountFilterId === null && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                      pressed && { opacity: 0.88 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typeStyles.captionMedium,
+                        { color: colors.textSecondary },
+                        accountFilterId === null && { color: colors.accent, fontWeight: '700' },
+                      ]}
+                    >
+                      Any
+                    </Text>
+                  </Pressable>
+                  {accounts.slice(0, 2).map((a) => {
+                    const active = accountFilterId === a.id;
+                    return (
+                      <Pressable
+                        key={a.id}
+                        onPress={() => {
+                          void hapticLight();
+                          runLayoutAnimation();
+                          setAccountFilterId(a.id);
+                        }}
+                        style={({ pressed }) => [
+                          styles.segBtn,
+                          { borderColor: colors.border },
+                          active && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                          pressed && { opacity: 0.88 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            typeStyles.captionMedium,
+                            { color: colors.textSecondary },
+                            active && { color: colors.accent, fontWeight: '700' },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {a.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Pressable
+                  onPress={() => setPresetModalOpen(true)}
+                  style={({ pressed }) => [styles.presetBtn, { borderColor: colors.border }, pressed && { opacity: 0.9 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save or load filter preset"
+                >
+                  <Ionicons name="bookmark-outline" size={18} color={colors.textMuted} />
+                  <Text style={[typeStyles.bodySmall, { color: colors.textSecondary, fontWeight: '700' }]}>
+                    Presets
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             {paramCategory || paramAccount ? (
               <View
                 style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}
@@ -677,6 +1005,59 @@ export default function ActivityScreen() {
                 </Pressable>
               </View>
               <Image source={{ uri: receiptPreviewUri }} style={styles.receiptImage} resizeMode="contain" />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {presetModalOpen ? (
+        <Modal animationType="slide" transparent visible onRequestClose={() => setPresetModalOpen(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setPresetModalOpen(false)}>
+            <Pressable style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+              <View style={[styles.modalToolbar, { borderBottomColor: colors.border, justifyContent: 'space-between' }]}>
+                <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>Filter presets</Text>
+                <Pressable onPress={() => setPresetModalOpen(false)} hitSlop={12} accessibilityRole="button">
+                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                </Pressable>
+              </View>
+              <View style={{ paddingHorizontal: space[3], paddingTop: space[2] }}>
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>Save current as</Text>
+                <View style={[styles.searchWrap, surfaceCard(colors, false)]}>
+                  <Ionicons name="bookmark-outline" size={18} color={colors.textMuted} />
+                  <TextInput
+                    style={[styles.search, { color: colors.text }]}
+                    placeholder="Preset name"
+                    placeholderTextColor={colors.textMuted}
+                    value={saveName}
+                    onChangeText={setSaveName}
+                  />
+                  <Pressable onPress={() => void savePreset()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Save preset">
+                    <Ionicons name="save-outline" size={18} color={colors.accent} />
+                  </Pressable>
+                </View>
+
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[2], marginBottom: 4 }]}>Load</Text>
+                {presets.length === 0 ? (
+                  <Text style={[typeStyles.bodySmall, { color: colors.textMuted }]}>No presets saved yet.</Text>
+                ) : (
+                  presets.map((p) => (
+                    <Pressable
+                      key={p.name}
+                      onPress={() => {
+                        applyPreset(p.value);
+                        setPresetModalOpen(false);
+                      }}
+                      style={({ pressed }) => [styles.presetRow, { borderColor: colors.border }, pressed && { opacity: 0.85 }]}
+                    >
+                      <Ionicons name="bookmark" size={16} color={colors.textMuted} />
+                      <Text style={[typeStyles.bodySmall, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                    </Pressable>
+                  ))
+                )}
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
@@ -819,4 +1200,10 @@ const styles = StyleSheet.create({
   receiptSheet: { padding: space[2], borderRadius: radii.lg, maxHeight: '85%' },
   receiptToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space[1] },
   receiptImage: { width: '100%', height: 420, borderRadius: radii.md, backgroundColor: 'transparent' },
+  advancedToggle: { flexDirection: 'row', alignItems: 'center', gap: space[1], paddingVertical: space[1] },
+  advancedBlock: { gap: space[1] + 2 },
+  advancedRow: { flexDirection: 'row', gap: space[2] },
+  advInput: { borderWidth: 1, borderRadius: radii.md, paddingHorizontal: space[2] - 2, paddingVertical: space[1] + 2, fontSize: 15, marginBottom: space[1] },
+  presetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space[1], borderWidth: 1, borderRadius: radii.md, paddingVertical: space[1] + 2 },
+  presetRow: { flexDirection: 'row', alignItems: 'center', gap: space[1], borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: space[1] + 2 },
 });

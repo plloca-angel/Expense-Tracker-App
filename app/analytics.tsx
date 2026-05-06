@@ -114,8 +114,18 @@ export default function AnalyticsScreen() {
             {Array.from({ length: dim }, (_, i) => i + 1).map((day) => {
               const v = spendByDay.get(day) ?? 0;
               const intensity = v <= 0 ? 0 : 0.12 + (v / maxDaySpend) * 0.78;
+              const dayIso = `${ym}-${String(day).padStart(2, '0')}`;
               return (
-                <View key={day} style={[styles.calCell, { backgroundColor: colors.bgElevated }]}>
+                <Pressable
+                  key={day}
+                  onPress={() => router.push(`/(tabs)/activity?date=${encodeURIComponent(dayIso)}&period=custom`)}
+                  style={({ pressed }) => [
+                    styles.calCell,
+                    { backgroundColor: colors.bgElevated, opacity: pressed ? 0.9 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open activity for ${dayIso}`}
+                >
                   {v > 0 ? (
                     <View
                       pointerEvents="none"
@@ -135,7 +145,7 @@ export default function AnalyticsScreen() {
                       {formatMoney(v, settings.currency)}
                     </Text>
                   ) : null}
-                </View>
+                </Pressable>
               );
             })}
           </View>

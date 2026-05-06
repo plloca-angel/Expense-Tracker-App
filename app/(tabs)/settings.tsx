@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,13 +13,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { router } from 'expo-router';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
 import { PressableCard } from '../../src/components/PressableCard';
 import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
-import type { BackupPayload } from '../../src/lib/backup';
-import { formatBackupImportPreview, parseBackupJson, summarizeBackupPayload } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
 import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import type { ThemePreference } from '../../src/types/settings';
@@ -39,7 +37,6 @@ export default function SettingsScreen() {
     addCustomCategory,
     deleteCustomCategory,
     exportBackup,
-    importBackup,
     accounts,
     addAccount,
     deleteAccount,
@@ -103,40 +100,8 @@ export default function SettingsScreen() {
     }
   };
 
-  const runImport = async (data: BackupPayload) => {
-    setJsonBusy(true);
-    try {
-      await importBackup(data);
-      Alert.alert('Restored', 'All data was replaced from the backup.');
-    } catch (e) {
-      Alert.alert('Import failed', e instanceof Error ? e.message : 'Unknown error');
-    } finally {
-      setJsonBusy(false);
-    }
-  };
-
   const pickImportJson = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/json',
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled) return;
-    const uri = result.assets[0]?.uri;
-    if (!uri) {
-      Alert.alert('Import', 'Could not read the file.');
-      return;
-    }
-    try {
-      const raw = await FileSystem.readAsStringAsync(uri, { encoding: 'utf8' });
-      const data = parseBackupJson(raw);
-      const preview = formatBackupImportPreview(summarizeBackupPayload(data));
-      Alert.alert('Replace all data?', preview, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Replace everything', style: 'destructive', onPress: () => void runImport(data) },
-      ]);
-    } catch (e) {
-      Alert.alert('Invalid backup', e instanceof Error ? e.message : 'Could not parse JSON.');
-    }
+    router.push('/import-backup');
   };
 
   const setTheme = (theme: ThemePreference) => void setSettings({ ...settings, theme });
