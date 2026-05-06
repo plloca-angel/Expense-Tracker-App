@@ -90,7 +90,6 @@ export default function OverviewScreen() {
 
   const headerSubtitle = useMemo(() => {
     if (period === 'month') return 'This month';
-    if (period === '30d') return 'Last 30 days';
     if (period === 'all') return 'All time';
     if (!customRange) return 'Custom dates';
     return `${customRange.start} → ${customRange.end}`;
@@ -190,7 +189,6 @@ export default function OverviewScreen() {
           {(
             [
               ['month', 'This month'],
-              ['30d', '30 days'],
               ['all', 'All time'],
               ['custom', 'Custom'],
             ] as const
@@ -420,9 +418,7 @@ export default function OverviewScreen() {
             Avg spend / day (
             {period === 'month'
               ? 'this month'
-              : period === '30d'
-                ? 'last 30 days'
-                : period === 'custom'
+              : period === 'custom'
                   ? 'selected dates'
                   : 'all time'}
             ):{' '}
