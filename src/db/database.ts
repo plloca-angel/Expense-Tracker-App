@@ -348,6 +348,22 @@ export async function deleteBudget(db: SQLite.SQLiteDatabase, id: number): Promi
   await db.runAsync('DELETE FROM budgets WHERE id = ?', id);
 }
 
+/** Remove budget rows whose category is not in the current expense category list (defaults + custom). */
+export async function pruneBudgetsOutsideExpenseCategories(
+  db: SQLite.SQLiteDatabase,
+  allowedCategories: string[]
+): Promise<void> {
+  if (allowedCategories.length === 0) {
+    await db.runAsync('DELETE FROM budgets');
+    return;
+  }
+  const placeholders = allowedCategories.map(() => '?').join(', ');
+  await db.runAsync(
+    `DELETE FROM budgets WHERE category NOT IN (${placeholders})`,
+    ...allowedCategories
+  );
+}
+
 export async function getSetting(db: SQLite.SQLiteDatabase, key: string): Promise<string | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', key);
   return row?.value ?? null;
