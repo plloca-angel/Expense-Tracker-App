@@ -105,10 +105,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!db) return;
-    const [ex, inc, bud, gl, s, ce, ci, acc, rec] = await Promise.all([
+    const [ex, inc, gl, s, ce, ci, acc, rec] = await Promise.all([
       database.fetchAllExpenses(db),
       database.fetchAllIncomes(db),
-      database.fetchAllBudgets(db),
       database.fetchAllGoals(db),
       database.loadAppSettings(db),
       database.fetchCustomCategories(db, 'expense'),
@@ -116,6 +115,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       database.fetchAllAccounts(db),
       database.fetchAllRecurring(db),
     ]);
+    const allowedExpenseCats = mergeCategoryOptions(CATEGORIES, ce);
+    await database.pruneBudgetsOutsideExpenseCategories(db, allowedExpenseCats);
+    const bud = await database.fetchAllBudgets(db);
     setExpenses(ex);
     setIncomes(inc);
     setBudgets(bud);
@@ -133,10 +135,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       const sqlite = await database.openDb();
       if (cancelled) return;
       setDb(sqlite);
-      const [ex, inc, bud, gl, s, ce, ci, acc, rec, seen] = await Promise.all([
+      const [ex, inc, gl, s, ce, ci, acc, rec, seen] = await Promise.all([
         database.fetchAllExpenses(sqlite),
         database.fetchAllIncomes(sqlite),
-        database.fetchAllBudgets(sqlite),
         database.fetchAllGoals(sqlite),
         database.loadAppSettings(sqlite),
         database.fetchCustomCategories(sqlite, 'expense'),
@@ -146,6 +147,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         database.getOnboardingSeen(sqlite),
       ]);
       if (cancelled) return;
+      const allowedExpenseCats = mergeCategoryOptions(CATEGORIES, ce);
+      await database.pruneBudgetsOutsideExpenseCategories(sqlite, allowedExpenseCats);
+      const bud = await database.fetchAllBudgets(sqlite);
       setExpenses(ex);
       setIncomes(inc);
       setBudgets(bud);
