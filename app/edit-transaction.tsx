@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DateField } from '../src/components/DateField';
 import { useFinance } from '../src/context/FinanceContext';
 import { parseAmount, todayISODate } from '../src/lib/money';
 import type { Expense } from '../src/types/expense';
@@ -25,6 +26,7 @@ export default function EditTransactionScreen() {
   const {
     ready,
     colors,
+    isDark,
     expenses,
     incomes,
     expenseCategoryOptions,
@@ -70,7 +72,7 @@ export default function EditTransactionScreen() {
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-      Alert.alert('Check date', 'Use YYYY-MM-DD format.');
+      Alert.alert('Check date', 'Pick a valid date.');
       return;
     }
     setSaving(true);
@@ -215,11 +217,7 @@ export default function EditTransactionScreen() {
           />
 
           <Text style={[styles.label, { color: colors.textSecondary }]}>Date</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-            value={date}
-            onChangeText={setDate}
-          />
+          <DateField label="Date" value={date} onChange={setDate} colors={colors} isDark={isDark} />
 
           <Text style={[styles.label, { color: colors.textSecondary }]}>Note</Text>
           <TextInput

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
+import { DateField } from '../../src/components/DateField';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess, hapticWarning } from '../../src/lib/haptics';
@@ -26,6 +27,7 @@ export default function BudgetsScreen() {
   const {
     ready,
     colors,
+    isDark,
     settings,
     expenses,
     budgets,
@@ -121,7 +123,7 @@ export default function BudgetsScreen() {
     }
     const dl = goalDeadline.trim();
     if (dl && !/^\d{4}-\d{2}-\d{2}$/.test(dl)) {
-      Alert.alert('Goal', 'Deadline must be YYYY-MM-DD or empty.');
+      Alert.alert('Goal', 'Pick a valid deadline or clear it.');
       return;
     }
     void (async () => {
@@ -411,15 +413,14 @@ export default function BudgetsScreen() {
               <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>
                 Deadline (optional)
               </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text },
-                ]}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
+              <DateField
+                label="Deadline (optional)"
                 value={goalDeadline}
-                onChangeText={setGoalDeadline}
+                onChange={setGoalDeadline}
+                colors={colors}
+                isDark={isDark}
+                optional
+                placeholder="No deadline"
               />
               <Pressable
                 style={({ pressed }) => [styles.btn, { backgroundColor: colors.income }, pressed && { opacity: 0.9 }]}

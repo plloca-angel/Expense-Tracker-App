@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DateField } from '../../src/components/DateField';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
@@ -26,6 +27,7 @@ type SplitLine = { category: string; amount: string };
 export default function AddScreen() {
   const {
     colors,
+    isDark,
     accounts,
     addExpense,
     addSplitExpense,
@@ -86,7 +88,7 @@ export default function AddScreen() {
 
   const onSave = async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-      Alert.alert('Check date', 'Use YYYY-MM-DD format.');
+      Alert.alert('Check date', 'Pick a valid date.');
       return;
     }
     setSaving(true);
@@ -418,17 +420,13 @@ export default function AddScreen() {
             onChangeText={setTag}
           />
 
-          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Date</Text>
-          <TextInput
-            style={[
-              styles.input,
-              surfaceCard(colors, false),
-              { color: colors.text },
-            ]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.textMuted}
+          <DateField
+            label="Date"
             value={date}
-            onChangeText={setDate}
+            onChange={setDate}
+            colors={colors}
+            isDark={isDark}
+            placeholder="Pick a date"
           />
 
           <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Note (optional)</Text>
