@@ -15,14 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
+import { PressableCard } from '../../src/components/PressableCard';
 import { COMMON_CURRENCIES } from '../../src/constants';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import type { BackupPayload } from '../../src/lib/backup';
 import { formatBackupImportPreview, parseBackupJson, summarizeBackupPayload } from '../../src/lib/backup';
 import { buildFinanceCsv } from '../../src/lib/exportCsv';
+import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import type { ThemePreference } from '../../src/types/settings';
-import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
+import { radii, space, type as typeStyles } from '../../src/theme/tokens';
 
 export default function SettingsScreen() {
   const {
@@ -165,8 +167,11 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Appearance</Text>
+        <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Appearance settings">
+          <View style={styles.titleRow}>
+            <Ionicons name="color-palette-outline" size={18} color={colors.textMuted} />
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Appearance</Text>
+          </View>
           <View style={styles.segment}>
             {(
               [
@@ -179,7 +184,10 @@ export default function SettingsScreen() {
               return (
                 <Pressable
                   key={key}
-                  onPress={() => setTheme(key)}
+                  onPress={() => {
+                    runLayoutAnimation();
+                    setTheme(key);
+                  }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
                   accessibilityLabel={`Theme ${label}`}
@@ -203,9 +211,9 @@ export default function SettingsScreen() {
               );
             })}
           </View>
-        </View>
+        </PressableCard>
 
-        <View style={[styles.card, surfaceCard(colors, true)]}>
+        <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Currency settings">
           <View style={styles.titleRow}>
             <Ionicons name="cash-outline" size={18} color={colors.textMuted} />
             <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Currency</Text>
@@ -216,7 +224,10 @@ export default function SettingsScreen() {
               return (
                 <Pressable
                   key={c}
-                  onPress={() => void setSettings({ ...settings, currency: c })}
+                  onPress={() => {
+                    runLayoutAnimation();
+                    void setSettings({ ...settings, currency: c });
+                  }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
                   accessibilityLabel={`Currency ${c}`}
@@ -240,9 +251,14 @@ export default function SettingsScreen() {
               );
             })}
           </View>
-        </View>
+        </PressableCard>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <PressableCard
+          colors={colors}
+          elevated
+          style={styles.card}
+          accessibilityLabel="Accounts and wallets"
+        >
           <View style={styles.titleRow}>
             <Ionicons name="wallet-outline" size={18} color={colors.textMuted} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>Accounts & wallets</Text>
@@ -264,7 +280,10 @@ export default function SettingsScreen() {
               return (
                 <Pressable
                   key={key}
-                  onPress={() => setNewAccKind(key)}
+                  onPress={() => {
+                    runLayoutAnimation();
+                    setNewAccKind(key);
+                  }}
                   style={[
                     styles.segBtn,
                     { borderColor: colors.border },
@@ -300,6 +319,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 const t = newAccName.trim();
                 if (!t) return;
+              runLayoutAnimation();
                 void addAccount(t, newAccKind);
                 setNewAccName('');
               }}
@@ -318,7 +338,7 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           ))}
-        </View>
+        </PressableCard>
 
         <Pressable
           style={({ pressed }) => [
@@ -341,7 +361,7 @@ export default function SettingsScreen() {
           )}
         </Pressable>
 
-        <View style={[styles.card, surfaceCard(colors, true)]}>
+        <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Full backup JSON">
           <View style={styles.titleRow}>
             <Ionicons name="cloud-outline" size={18} color={colors.textMuted} />
             <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Full backup (JSON)</Text>
@@ -384,9 +404,9 @@ export default function SettingsScreen() {
             <Ionicons name="cloud-download-outline" size={22} color={colors.accent} />
             <Text style={[styles.importText, { color: colors.accent }]}>Import backup…</Text>
           </Pressable>
-        </View>
+        </PressableCard>
 
-        <View style={[styles.card, surfaceCard(colors, true)]}>
+        <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Custom expense categories">
           <View style={styles.titleRow}>
             <Ionicons name="pricetags-outline" size={18} color={colors.textMuted} />
             <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom expense categories</Text>
@@ -407,6 +427,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 const t = newExpCat.trim();
                 if (!t) return;
+                runLayoutAnimation();
                 void addCustomCategory(t, 'expense');
                 setNewExpCat('');
               }}
@@ -437,9 +458,9 @@ export default function SettingsScreen() {
               </View>
             ))
           )}
-        </View>
+        </PressableCard>
 
-        <View style={[styles.card, surfaceCard(colors, true)]}>
+        <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Custom income categories">
           <View style={styles.titleRow}>
             <Ionicons name="pricetag-outline" size={18} color={colors.textMuted} />
             <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Custom income categories</Text>
@@ -460,6 +481,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 const t = newIncCat.trim();
                 if (!t) return;
+                runLayoutAnimation();
                 void addCustomCategory(t, 'income');
                 setNewIncCat('');
               }}
@@ -490,7 +512,7 @@ export default function SettingsScreen() {
               </View>
             ))
           )}
-        </View>
+        </PressableCard>
 
         <Text style={[typeStyles.caption, styles.footer, { color: colors.textMuted }]}>
           Data is stored only on this device (SQLite).

@@ -16,9 +16,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
+import { PressableCard } from '../../src/components/PressableCard';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticWarning } from '../../src/lib/haptics';
+import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import {
   buildActivityRows,
   filterExpensesForActivitySearch,
@@ -160,7 +162,12 @@ export default function ActivityScreen() {
         const acc =
           d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
         return (
-          <View style={[styles.row, surfaceCard(colors, true)]}>
+          <PressableCard
+            colors={colors}
+            elevated
+            style={styles.row}
+            accessibilityLabel={`Income, ${d.category}`}
+          >
             <View style={styles.rowIcon}>
               <Ionicons name="arrow-up-circle" size={28} color={colors.income} />
             </View>
@@ -203,7 +210,7 @@ export default function ActivityScreen() {
                 <Ionicons name="trash-outline" size={22} color={colors.danger} />
               </Pressable>
             </View>
-          </View>
+          </PressableCard>
         );
       }
 
@@ -212,7 +219,12 @@ export default function ActivityScreen() {
         const acc =
           d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
         return (
-          <View style={[styles.row, surfaceCard(colors, true)]}>
+          <PressableCard
+            colors={colors}
+            elevated
+            style={styles.row}
+            accessibilityLabel={`Expense, ${d.category}`}
+          >
             <View style={styles.rowIcon}>
               <Ionicons name="arrow-down-circle" size={28} color={colors.expense} />
             </View>
@@ -258,7 +270,7 @@ export default function ActivityScreen() {
                 <Ionicons name="trash-outline" size={22} color={colors.danger} />
               </Pressable>
             </View>
-          </View>
+          </PressableCard>
         );
       }
 
@@ -269,7 +281,12 @@ export default function ActivityScreen() {
         head.accountId != null ? (accountNameById.get(head.accountId) ?? `Account #${head.accountId}`) : null;
       const hasReceipt = lines.some((l) => l.receiptUri);
       return (
-        <View style={[styles.row, surfaceCard(colors, true)]}>
+        <PressableCard
+          colors={colors}
+          elevated
+          style={styles.row}
+          accessibilityLabel="Split payment"
+        >
           <View style={styles.rowIcon}>
             <Ionicons name="git-branch-outline" size={28} color={colors.expense} />
           </View>
@@ -321,7 +338,7 @@ export default function ActivityScreen() {
               <Ionicons name="trash-outline" size={22} color={colors.danger} />
             </Pressable>
           </View>
-        </View>
+        </PressableCard>
       );
     },
     [colors, settings.currency, confirmDelete, accountNameById]
@@ -347,101 +364,153 @@ export default function ActivityScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <View style={styles.toolbar}>
-        <View style={styles.segment}>
-          {(['all', 'expense', 'income'] as const).map((k) => (
-            <Pressable
-              key={k}
-              onPress={() => {
-                void hapticLight();
-                setKind(k);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: kind === k }}
-              accessibilityLabel={
-                k === 'all' ? 'Show all transactions' : k === 'expense' ? 'Show expenses only' : 'Show income only'
-              }
-              style={({ pressed }) => [
-                styles.segBtn,
-                { borderColor: colors.border },
-                kind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
-                pressed && { opacity: 0.88 },
-              ]}
-            >
-              <Text
-                style={[
-                  typeStyles.captionMedium,
-                  { color: colors.textSecondary },
-                  kind === k && { color: '#fff', fontWeight: '700' },
-                ]}
+      <View style={styles.toolbarOuter}>
+        <PressableCard
+          colors={colors}
+          elevated
+          style={styles.toolbarCard}
+          accessibilityLabel="Activity filters"
+        >
+          <View style={styles.toolbar}>
+            <View style={styles.segment}>
+              {(['all', 'expense', 'income'] as const).map((k) => (
+                <Pressable
+                  key={k}
+                  onPress={() => {
+                    void hapticLight();
+                    runLayoutAnimation();
+                    setKind(k);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: kind === k }}
+                  accessibilityLabel={
+                    k === 'all'
+                      ? 'Show all transactions'
+                      : k === 'expense'
+                        ? 'Show expenses only'
+                        : 'Show income only'
+                  }
+                  style={({ pressed }) => [
+                    styles.segBtn,
+                    { borderColor: colors.border },
+                    kind === k && { backgroundColor: colors.accent, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <View style={styles.segContent}>
+                    <Ionicons
+                      name={k === 'all' ? 'apps-outline' : k === 'expense' ? 'arrow-down' : 'arrow-up'}
+                      size={16}
+                      color={kind === k ? '#fff' : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        typeStyles.captionMedium,
+                        { color: colors.textSecondary },
+                        kind === k && { color: '#fff', fontWeight: '700' },
+                      ]}
+                    >
+                      {k === 'all' ? 'All' : k === 'expense' ? 'Out' : 'In'}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.segment}>
+              {(
+                [
+                  ['all', 'All'],
+                  ['month', 'Month'],
+                  ['30d', '30d'],
+                ] as const
+              ).map(([k, label]) => (
+                <Pressable
+                  key={k}
+                  onPress={() => {
+                    void hapticLight();
+                    runLayoutAnimation();
+                    setPeriod(k);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: period === k }}
+                  accessibilityLabel={
+                    k === 'all'
+                      ? 'Time range: all time'
+                      : k === 'month'
+                        ? 'Time range: this month'
+                        : 'Time range: last 30 days'
+                  }
+                  style={({ pressed }) => [
+                    styles.segBtn,
+                    { borderColor: colors.border },
+                    period === k && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+                    pressed && { opacity: 0.88 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typeStyles.captionMedium,
+                      { color: colors.textSecondary },
+                      period === k && { color: colors.accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={[styles.searchWrap, surfaceCard(colors, false)]}>
+              <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+              <TextInput
+                style={[styles.search, { color: colors.text }]}
+                placeholder="Search note, tag, category"
+                placeholderTextColor={colors.textMuted}
+                value={search}
+                onChangeText={(t) => {
+                  runLayoutAnimation();
+                  setSearch(t);
+                }}
+              />
+              {search.trim() ? (
+                <Pressable
+                  onPress={() => {
+                    runLayoutAnimation();
+                    setSearch('');
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={10}
+                  style={({ pressed }) => [styles.iconBtnSm, pressed && { opacity: 0.6 }]}
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {paramCategory || paramAccount ? (
+              <View
+                style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}
               >
-                {k === 'all' ? 'All' : k === 'expense' ? 'Out' : 'In'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.segment}>
-          {(
-            [
-              ['all', 'All'],
-              ['month', 'Month'],
-              ['30d', '30d'],
-            ] as const
-          ).map(([k, label]) => (
-            <Pressable
-              key={k}
-              onPress={() => {
-                void hapticLight();
-                setPeriod(k);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: period === k }}
-              accessibilityLabel={
-                k === 'all' ? 'Time range: all time' : k === 'month' ? 'Time range: this month' : 'Time range: last 30 days'
-              }
-              style={({ pressed }) => [
-                styles.segBtn,
-                { borderColor: colors.border },
-                period === k && { backgroundColor: colors.accentMuted, borderColor: colors.accent },
-                pressed && { opacity: 0.88 },
-              ]}
-            >
-              <Text
-                style={[
-                  typeStyles.captionMedium,
-                  { color: colors.textSecondary },
-                  period === k && { color: colors.accent, fontWeight: '700' },
-                ]}
-              >
-                {label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={[styles.search, surfaceCard(colors, false), { color: colors.text }]}
-          placeholder="Search note, tag, category"
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-        />
-        {paramCategory || paramAccount ? (
-          <View style={[styles.filterBanner, { backgroundColor: colors.accentMuted, borderColor: colors.accent }]}>
-            <Text style={[styles.filterText, { color: colors.text }]} numberOfLines={2}>
-              {paramCategory ? `Category: ${paramCategory}` : ''}
-              {paramCategory && paramAccount ? ' · ' : ''}
-              {paramAccount
-                ? `Account: ${accountNameById.get(Number(paramAccount)) ?? paramAccount}`
-                : ''}
-            </Text>
-            <Pressable
-              onPress={() => router.replace('/(tabs)/activity')}
-              style={({ pressed }) => [styles.clearFilter, pressed && { opacity: 0.7 }]}
-            >
-              <Text style={{ color: colors.accent, fontWeight: '700' }}>Clear</Text>
-            </Pressable>
+                <Ionicons name="funnel-outline" size={16} color={colors.accent} />
+                <Text style={[styles.filterText, { color: colors.text }]} numberOfLines={2}>
+                  {paramCategory ? `Category: ${paramCategory}` : ''}
+                  {paramCategory && paramAccount ? ' · ' : ''}
+                  {paramAccount ? `Account: ${accountNameById.get(Number(paramAccount)) ?? paramAccount}` : ''}
+                </Text>
+                <Pressable
+                  onPress={() => router.replace('/(tabs)/activity')}
+                  style={({ pressed }) => [styles.clearFilter, pressed && { opacity: 0.7 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear filters"
+                >
+                  <Text style={{ color: colors.accent, fontWeight: '700' }}>Clear</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
-        ) : null}
+        </PressableCard>
       </View>
       <FlatList
         data={data}
@@ -472,7 +541,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingHint: { marginTop: space[1] + 4 },
-  toolbar: { paddingHorizontal: space[2], paddingTop: space[1], paddingBottom: space[1] / 2, gap: space[1] + 2 },
+  toolbarOuter: { paddingHorizontal: space[2], paddingTop: space[1], paddingBottom: space[1] / 2 },
+  toolbarCard: { padding: space[2] - 2, borderRadius: radii.lg },
+  toolbar: { gap: space[1] + 2 },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1] },
   segBtn: {
     paddingHorizontal: space[2] - 2,
@@ -482,12 +553,16 @@ const styles = StyleSheet.create({
     borderRadius: radii.md - 2,
     borderWidth: 1,
   },
-  search: {
+  segContent: { flexDirection: 'row', alignItems: 'center', gap: space[1] - 2 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
     borderRadius: radii.md,
     paddingHorizontal: space[2] - 2,
-    paddingVertical: space[1] + 2,
-    fontSize: 15,
+    paddingVertical: space[1] + 1,
   },
+  search: { flex: 1, fontSize: 15, paddingVertical: 0 },
   list: { padding: space[2], paddingBottom: space[3] + 4, flexGrow: 1 },
   row: {
     flexDirection: 'row',
@@ -500,6 +575,7 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1 },
   rowActions: { flexDirection: 'row', alignItems: 'flex-start' },
   iconBtn: { padding: 8, minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  iconBtnSm: { padding: 6, minWidth: 36, minHeight: 36, justifyContent: 'center', alignItems: 'center' },
   filterBanner: {
     flexDirection: 'row',
     alignItems: 'center',

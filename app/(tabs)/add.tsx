@@ -13,9 +13,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { PressableCard } from '../../src/components/PressableCard';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess } from '../../src/lib/haptics';
+import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import { parseAmount, todayISODate } from '../../src/lib/money';
 import { pickAndStoreReceipt, receiptSizeLimitLabel } from '../../src/lib/receipts';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
@@ -62,6 +64,7 @@ export default function AddScreen() {
 
   const onKindChange = (k: EntryKind) => {
     void hapticLight();
+    runLayoutAnimation();
     setEntryKind(k);
     const next = k === 'expense' ? expenseCategoryOptions : incomeCategoryOptions;
     const first = next[0] ?? 'Other';
@@ -160,52 +163,72 @@ export default function AddScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
-          <View style={styles.kindRow}>
-            <Pressable
-              onPress={() => onKindChange('expense')}
-              style={({ pressed }) => [
-                styles.kindBtn,
-                { borderColor: colors.border, backgroundColor: colors.card },
-                entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
-                pressed && { opacity: 0.92 },
-              ]}
-            >
-              <Text
-                style={[
-                  typeStyles.bodySmall,
-                  { color: colors.text },
-                  entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
+          <PressableCard colors={colors} elevated style={styles.sectionCard} accessibilityLabel="Type selector">
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="create-outline" size={18} color={colors.textMuted} />
+              <Text style={[typeStyles.title, { color: colors.text }]}>New entry</Text>
+            </View>
+            <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Type</Text>
+            <View style={styles.kindRow}>
+              <Pressable
+                onPress={() => onKindChange('expense')}
+                style={({ pressed }) => [
+                  styles.kindBtn,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                  entryKind === 'expense' && { borderColor: colors.expense, backgroundColor: colors.bgElevated },
+                  pressed && { opacity: 0.92 },
                 ]}
               >
-                Expense
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onKindChange('income')}
-              style={({ pressed }) => [
-                styles.kindBtn,
-                { borderColor: colors.border, backgroundColor: colors.card },
-                entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
-                pressed && { opacity: 0.92 },
-              ]}
-            >
-              <Text
-                style={[
-                  typeStyles.bodySmall,
-                  { color: colors.text },
-                  entryKind === 'income' && { color: colors.income, fontWeight: '700' },
+                <View style={styles.kindBtnRow}>
+                  <Ionicons
+                    name={entryKind === 'expense' ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
+                    size={18}
+                    color={entryKind === 'expense' ? colors.expense : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      typeStyles.bodySmall,
+                      { color: colors.text },
+                      entryKind === 'expense' && { color: colors.expense, fontWeight: '700' },
+                    ]}
+                  >
+                    Expense
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => onKindChange('income')}
+                style={({ pressed }) => [
+                  styles.kindBtn,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                  entryKind === 'income' && { borderColor: colors.income, backgroundColor: colors.bgElevated },
+                  pressed && { opacity: 0.92 },
                 ]}
               >
-                Income
-              </Text>
-            </Pressable>
-          </View>
+                <View style={styles.kindBtnRow}>
+                  <Ionicons
+                    name={entryKind === 'income' ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
+                    size={18}
+                    color={entryKind === 'income' ? colors.income : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      typeStyles.bodySmall,
+                      { color: colors.text },
+                      entryKind === 'income' && { color: colors.income, fontWeight: '700' },
+                    ]}
+                  >
+                    Income
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
 
           {entryKind === 'expense' ? (
             <Pressable
               onPress={() => {
                 void hapticLight();
+                runLayoutAnimation();
                 setSplitMode((s) => !s);
               }}
               style={({ pressed }) => [
@@ -225,6 +248,7 @@ export default function AddScreen() {
               </Text>
             </Pressable>
           ) : null}
+          </PressableCard>
 
           {entryKind === 'expense' && splitMode ? (
             <>
@@ -449,7 +473,7 @@ export default function AddScreen() {
 
           {entryKind === 'expense' ? (
             <View style={[styles.receiptCard, surfaceCard(colors, false)]}>
-              <View style={styles.sectionTitleRow}>
+              <View style={styles.receiptTitleRow}>
                 <Ionicons name="receipt-outline" size={18} color={colors.textMuted} />
                 <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>Receipt (optional)</Text>
               </View>
@@ -502,6 +526,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { padding: space[3], paddingBottom: space[5] },
   label: { marginBottom: space[1], marginTop: space[1] / 2 },
+  sectionCard: { padding: space[2], marginBottom: space[2] },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1], marginBottom: space[1] + 2 },
   kindRow: { flexDirection: 'row', gap: space[1] + 4, marginBottom: space[2] },
   kindBtn: {
     flex: 1,
@@ -510,6 +536,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
   },
+  kindBtnRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   input: {
     borderWidth: 1,
     borderRadius: radii.md,
@@ -526,7 +553,7 @@ const styles = StyleSheet.create({
   splitHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: space[1] },
   addLineBtn: { alignSelf: 'flex-start', paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1, marginBottom: space[1] },
   receiptCard: { padding: space[2], marginBottom: space[2], borderWidth: 1, borderRadius: radii.lg },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1], marginBottom: space[1] },
+  receiptTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space[1], marginBottom: space[1] },
   receiptBtn: { paddingVertical: space[1] + 2, paddingHorizontal: space[2] - 2, borderRadius: radii.md, borderWidth: 1 },
   saveBtn: { borderRadius: radii.lg - 2, paddingVertical: space[2], alignItems: 'center', marginTop: space[1] },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '600' },

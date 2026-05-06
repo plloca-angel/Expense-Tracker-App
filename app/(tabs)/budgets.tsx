@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyStateCard } from '../../src/components/EmptyStateCard';
+import { PressableCard } from '../../src/components/PressableCard';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticSuccess, hapticWarning } from '../../src/lib/haptics';
+import { runLayoutAnimation } from '../../src/lib/layoutAnimation';
 import { currentMonthPrefix, expensesInMonth } from '../../src/lib/period';
 import { formatMoney, parseAmount } from '../../src/lib/money';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
@@ -249,6 +251,7 @@ export default function BudgetsScreen() {
             key={key}
             onPress={() => {
               void hapticLight();
+              runLayoutAnimation();
               setMode(key);
             }}
             style={({ pressed }) => [
@@ -284,8 +287,11 @@ export default function BudgetsScreen() {
               Monthly cap per category. Progress uses expenses in {ym}.
             </Text>
 
-            <View style={[styles.card, surfaceCard(colors, true)]}>
-              <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Add or update budget</Text>
+            <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="Add or update budget">
+              <View style={styles.titleRow}>
+                <Ionicons name="pie-chart-outline" size={18} color={colors.textMuted} />
+                <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Add or update budget</Text>
+              </View>
               <Text style={[typeStyles.captionMedium, styles.label, { color: colors.textSecondary }]}>Category</Text>
               <View style={styles.chips}>
                 {expenseCategoryOptions.map((c) => {
@@ -295,6 +301,7 @@ export default function BudgetsScreen() {
                       key={c}
                       onPress={() => {
                         void hapticLight();
+                        runLayoutAnimation();
                         setCategory(c);
                       }}
                       style={({ pressed }) => [
@@ -337,7 +344,7 @@ export default function BudgetsScreen() {
               >
                 <Text style={styles.btnText}>Save budget</Text>
               </Pressable>
-            </View>
+            </PressableCard>
 
             <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>Active budgets</Text>
             {rows.length === 0 ? (
@@ -349,7 +356,13 @@ export default function BudgetsScreen() {
               />
             ) : (
               rows.map((b) => (
-                <View key={b.id} style={[styles.row, surfaceCard(colors, true)]}>
+                <PressableCard
+                  key={b.id}
+                  colors={colors}
+                  elevated
+                  style={styles.row}
+                  accessibilityLabel={`Budget row, ${b.category}`}
+                >
                   <View style={styles.rowTop}>
                     <Text style={[typeStyles.title, { color: colors.text }]}>{b.category}</Text>
                     <Pressable
@@ -373,7 +386,7 @@ export default function BudgetsScreen() {
                       ]}
                     />
                   </View>
-                </View>
+                </PressableCard>
               ))
             )}
           </>
@@ -383,7 +396,7 @@ export default function BudgetsScreen() {
               Track savings targets. Update “saved so far” as you set money aside (manual progress).
             </Text>
 
-            <View style={[styles.card, surfaceCard(colors, true)]}>
+            <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="New goal">
               <View style={styles.titleRow}>
                 <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
                 <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New goal</Text>
@@ -430,7 +443,7 @@ export default function BudgetsScreen() {
               >
                 <Text style={styles.btnText}>Add goal</Text>
               </Pressable>
-            </View>
+            </PressableCard>
 
             <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>Your goals</Text>
             {goals.length === 0 ? (
@@ -444,7 +457,13 @@ export default function BudgetsScreen() {
               goals.map((g) => {
                 const pct = g.targetAmount > 0 ? Math.min(100, (g.savedAmount / g.targetAmount) * 100) : 0;
                 return (
-                  <View key={g.id} style={[styles.row, surfaceCard(colors, true)]}>
+                  <PressableCard
+                    key={g.id}
+                    colors={colors}
+                    elevated
+                    style={styles.row}
+                    accessibilityLabel={`Goal row, ${g.name}`}
+                  >
                     <View style={styles.rowTop}>
                       <View style={{ flex: 1 }}>
                         <Text style={[typeStyles.title, { color: colors.text }]}>{g.name}</Text>
@@ -502,7 +521,7 @@ export default function BudgetsScreen() {
                         <Text style={styles.applyBtnText}>Apply</Text>
                       </Pressable>
                     </View>
-                  </View>
+                  </PressableCard>
                 );
               })
             )}
@@ -523,7 +542,7 @@ export default function BudgetsScreen() {
               <Text style={styles.btnText}>Post due items for {ym}</Text>
             </Pressable>
 
-            <View style={[styles.card, surfaceCard(colors, true)]}>
+            <PressableCard colors={colors} elevated style={styles.card} accessibilityLabel="New recurring item">
               <View style={styles.titleRow}>
                 <Ionicons name="repeat-outline" size={18} color={colors.textMuted} />
                 <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>New recurring</Text>
@@ -546,6 +565,7 @@ export default function BudgetsScreen() {
                     key={k}
                     onPress={() => {
                       void hapticLight();
+                      runLayoutAnimation();
                       setRecKind(k);
                     }}
                     style={({ pressed }) => [
@@ -586,6 +606,7 @@ export default function BudgetsScreen() {
                       key={c}
                       onPress={() => {
                         void hapticLight();
+                        runLayoutAnimation();
                         setRecCategory(c);
                       }}
                       style={({ pressed }) => [
@@ -653,6 +674,7 @@ export default function BudgetsScreen() {
                       key={a.id}
                       onPress={() => {
                         void hapticLight();
+                        runLayoutAnimation();
                         setRecAccountId(a.id);
                       }}
                       style={({ pressed }) => [
@@ -692,7 +714,7 @@ export default function BudgetsScreen() {
               >
                 <Text style={styles.btnText}>Save recurring</Text>
               </Pressable>
-            </View>
+            </PressableCard>
 
             <Text style={[typeStyles.title, styles.sectionTitle, { color: colors.text, fontSize: 18 }]}>
               Active recurring
@@ -706,7 +728,13 @@ export default function BudgetsScreen() {
               />
             ) : (
               recurringItems.map((r) => (
-                <View key={r.id} style={[styles.row, surfaceCard(colors, true)]}>
+                <PressableCard
+                  key={r.id}
+                  colors={colors}
+                  elevated
+                  style={styles.row}
+                  accessibilityLabel={`Recurring item, ${r.title}`}
+                >
                   <View style={styles.rowTop}>
                     <View style={{ flex: 1 }}>
                       <Text style={[typeStyles.title, { color: colors.text }]}>{r.title}</Text>
@@ -726,7 +754,7 @@ export default function BudgetsScreen() {
                       <Ionicons name="trash-outline" size={22} color={colors.danger} />
                     </Pressable>
                   </View>
-                </View>
+                </PressableCard>
               ))
             )}
           </>
