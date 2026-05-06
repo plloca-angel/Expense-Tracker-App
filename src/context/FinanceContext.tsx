@@ -10,7 +10,7 @@ import { useColorScheme } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { CATEGORIES, INCOME_CATEGORIES } from '../constants';
 import * as database from '../db/database';
-import type { NewExpenseInput, NewIncomeInput, NewGoalInput } from '../db/database';
+import type { NewExpenseInput, NewIncomeInput, NewGoalInput, NewSplitExpenseInput } from '../db/database';
 import type { BackupPayload } from '../lib/backup';
 import { darkColors, lightColors, type ThemeColors } from '../theme/colors';
 import type { Account } from '../types/account';
@@ -40,6 +40,7 @@ type FinanceContextValue = {
   dismissOnboarding: () => Promise<void>;
   refresh: () => Promise<void>;
   addExpense: (input: NewExpenseInput) => Promise<void>;
+  addSplitExpense: (input: NewSplitExpenseInput) => Promise<void>;
   updateExpense: (id: number, input: NewExpenseInput) => Promise<void>;
   removeExpense: (id: number) => Promise<void>;
   addIncome: (input: NewIncomeInput) => Promise<void>;
@@ -182,6 +183,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     async (input: NewExpenseInput) => {
       if (!db) return;
       await database.insertExpense(db, input);
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const addSplitExpense = useCallback(
+    async (input: NewSplitExpenseInput) => {
+      if (!db) return;
+      await database.insertSplitExpense(db, input);
       await refresh();
     },
     [db, refresh]
@@ -374,6 +384,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       dismissOnboarding,
       refresh,
       addExpense,
+      addSplitExpense,
       updateExpense,
       removeExpense,
       addIncome,
@@ -412,6 +423,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       dismissOnboarding,
       refresh,
       addExpense,
+      addSplitExpense,
       updateExpense,
       removeExpense,
       addIncome,

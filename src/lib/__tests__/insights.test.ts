@@ -13,6 +13,8 @@ const exp = (partial: Partial<Expense> & Pick<Expense, 'amount' | 'category' | '
   tag: null,
   createdAt: '2026-05-01T00:00:00.000Z',
   accountId: null,
+  splitGroupId: null,
+  receiptUri: null,
   ...partial,
 });
 

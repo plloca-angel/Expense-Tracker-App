@@ -19,15 +19,17 @@ import { EmptyStateCard } from '../../src/components/EmptyStateCard';
 import { useFinance } from '../../src/context/FinanceContext';
 import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight, hapticWarning } from '../../src/lib/haptics';
+import {
+  buildActivityRows,
+  filterExpensesForActivitySearch,
+  filterExpensesGroupAware,
+  splitGroupTotal,
+  type ActivityUnifiedRow,
+} from '../../src/lib/activityGroups';
 import { formatMoney } from '../../src/lib/money';
 import { filterByPeriod, type PeriodFilter } from '../../src/lib/period';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
-import type { Expense } from '../../src/types/expense';
 import type { Income } from '../../src/types/income';
-
-type Row =
-  | { kind: 'expense'; data: Expense }
-  | { kind: 'income'; data: Income };
 
 type FilterKind = 'all' | 'expense' | 'income';
 
@@ -76,100 +78,223 @@ export default function ActivityScreen() {
     let inc = filterByPeriod(incomes, period);
     if (paramCategory) {
       const c = String(paramCategory);
-      ex = ex.filter((e) => e.category === c);
+      ex = filterExpensesGroupAware(ex, (e) => e.category === c);
       inc = inc.filter((i) => i.category === c);
     }
     if (paramAccount) {
       const aid = Number(paramAccount);
       if (Number.isFinite(aid)) {
-        ex = ex.filter((e) => e.accountId === aid);
+        ex = filterExpensesGroupAware(ex, (e) => e.accountId === aid);
         inc = inc.filter((i) => i.accountId === aid);
       }
     }
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (q) {
-      const match = (note: string | null, tag: string | null, cat: string) => {
-        const t = `${note ?? ''} ${tag ?? ''} ${cat}`.toLowerCase();
-        return t.includes(q);
+      ex = filterExpensesForActivitySearch(ex, q);
+      const needle = q.toLowerCase();
+      const matchInc = (i: Income) => {
+        const t = `${i.note ?? ''} ${i.tag ?? ''} ${i.category}`.toLowerCase();
+        return t.includes(needle);
       };
-      ex = ex.filter((e) => match(e.note, e.tag, e.category));
-      inc = inc.filter((i) => match(i.note, i.tag, i.category));
+      inc = inc.filter(matchInc);
     }
-    const rows: Row[] = [];
-    if (kind !== 'income') for (const e of ex) rows.push({ kind: 'expense', data: e });
-    if (kind !== 'expense') for (const i of inc) rows.push({ kind: 'income', data: i });
-    rows.sort((a, b) => {
-      const da = a.data.date;
-      const db = b.data.date;
-      if (da !== db) return db.localeCompare(da);
-      return b.data.id - a.data.id;
-    });
-    return rows;
+    return buildActivityRows(kind === 'income' ? [] : ex, kind === 'expense' ? [] : inc);
   }, [expenses, incomes, kind, period, search, paramCategory, paramAccount]);
 
   const confirmDelete = useCallback(
-    (row: Row) => {
-      const amt = formatMoney(row.data.amount, settings.currency);
-      if (row.kind === 'expense') {
-        Alert.alert('Delete expense', `Remove ${amt} — ${row.data.category}?`, [
+    (row: ActivityUnifiedRow) => {
+      if (row.kind === 'income') {
+        const d = row.income;
+        const amt = formatMoney(d.amount, settings.currency);
+        Alert.alert('Delete income', `Remove ${amt} — ${d.category}?`, [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Delete',
             style: 'destructive',
             onPress: () =>
-              void removeExpense(row.data.id).then(() => {
+              void removeIncome(d.id).then(() => {
                 void hapticWarning();
               }),
           },
         ]);
-      } else {
-        Alert.alert('Delete income', `Remove ${amt} — ${row.data.category}?`, [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () =>
-              void removeIncome(row.data.id).then(() => {
-                void hapticWarning();
-              }),
-          },
-        ]);
+        return;
       }
+      if (row.expenseRow.shape === 'single') {
+        const d = row.expenseRow.expense;
+        const amt = formatMoney(d.amount, settings.currency);
+        Alert.alert('Delete expense', `Remove ${amt} — ${d.category}?`, [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () =>
+              void removeExpense(d.id).then(() => {
+                void hapticWarning();
+              }),
+          },
+        ]);
+        return;
+      }
+      const lines = row.expenseRow.expenses;
+      const total = splitGroupTotal(lines);
+      const amt = formatMoney(total, settings.currency);
+      Alert.alert('Delete split payment', `Remove entire payment (${amt}, ${lines.length} lines)?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: () =>
+            void removeExpense(lines[0]!.id).then(() => {
+              void hapticWarning();
+            }),
+        },
+      ]);
     },
     [removeExpense, removeIncome, settings.currency]
   );
 
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<Row>) => {
-      const d = item.data;
-      const isExp = item.kind === 'expense';
+    ({ item }: ListRenderItemInfo<ActivityUnifiedRow>) => {
+      if (item.kind === 'income') {
+        const d = item.income;
+        const acc =
+          d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
+        return (
+          <View style={[styles.row, surfaceCard(colors, true)]}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="arrow-up-circle" size={28} color={colors.income} />
+            </View>
+            <View style={styles.rowMain}>
+              <Text style={[typeStyles.title, { color: colors.text }]}>+{formatMoney(d.amount, settings.currency)}</Text>
+              <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary, marginTop: space[1] / 2 }]}>
+                {d.category}
+              </Text>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+                {d.date}
+                {d.tag ? ` · ${d.tag}` : ''}
+                {acc ? ` · ${acc}` : ''}
+              </Text>
+              {d.note ? (
+                <Text style={[typeStyles.bodySmall, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+                  {d.note}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.rowActions}>
+              <Pressable
+                onPress={() =>
+                  void router.push({
+                    pathname: '/edit-transaction',
+                    params: { id: String(d.id), kind: 'income' },
+                  })
+                }
+                style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit income, ${d.category}`}
+              >
+                <Ionicons name="pencil-outline" size={22} color={colors.accent} />
+              </Pressable>
+              <Pressable
+                onPress={() => confirmDelete(item)}
+                style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete income, ${d.category}`}
+              >
+                <Ionicons name="trash-outline" size={22} color={colors.danger} />
+              </Pressable>
+            </View>
+          </View>
+        );
+      }
+
+      if (item.expenseRow.shape === 'single') {
+        const d = item.expenseRow.expense;
+        const acc =
+          d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
+        return (
+          <View style={[styles.row, surfaceCard(colors, true)]}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="arrow-down-circle" size={28} color={colors.expense} />
+            </View>
+            <View style={styles.rowMain}>
+              <Text style={[typeStyles.title, { color: colors.text }]}>
+                −{formatMoney(d.amount, settings.currency)}
+              </Text>
+              <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary, marginTop: space[1] / 2 }]}>
+                {d.category}
+              </Text>
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+                {d.date}
+                {d.tag ? ` · ${d.tag}` : ''}
+                {acc ? ` · ${acc}` : ''}
+                {d.receiptUri ? ' · receipt' : ''}
+              </Text>
+              {d.note ? (
+                <Text style={[typeStyles.bodySmall, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
+                  {d.note}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.rowActions}>
+              <Pressable
+                onPress={() =>
+                  void router.push({
+                    pathname: '/edit-transaction',
+                    params: { id: String(d.id), kind: 'expense' },
+                  })
+                }
+                style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit expense, ${d.category}`}
+              >
+                <Ionicons name="pencil-outline" size={22} color={colors.accent} />
+              </Pressable>
+              <Pressable
+                onPress={() => confirmDelete(item)}
+                style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete expense, ${d.category}`}
+              >
+                <Ionicons name="trash-outline" size={22} color={colors.danger} />
+              </Pressable>
+            </View>
+          </View>
+        );
+      }
+
+      const lines = item.expenseRow.expenses;
+      const total = splitGroupTotal(lines);
+      const head = lines[0]!;
       const acc =
-        d.accountId != null ? (accountNameById.get(d.accountId) ?? `Account #${d.accountId}`) : null;
+        head.accountId != null ? (accountNameById.get(head.accountId) ?? `Account #${head.accountId}`) : null;
+      const hasReceipt = lines.some((l) => l.receiptUri);
       return (
         <View style={[styles.row, surfaceCard(colors, true)]}>
           <View style={styles.rowIcon}>
-            <Ionicons
-              name={isExp ? 'arrow-down-circle' : 'arrow-up-circle'}
-              size={28}
-              color={isExp ? colors.expense : colors.income}
-            />
+            <Ionicons name="git-branch-outline" size={28} color={colors.expense} />
           </View>
           <View style={styles.rowMain}>
-            <Text style={[typeStyles.title, { color: colors.text }]}>
-              {isExp ? '−' : '+'}
-              {formatMoney(d.amount, settings.currency)}
+            <Text style={[typeStyles.title, { color: colors.text }]}>−{formatMoney(total, settings.currency)}</Text>
+            <Text style={[typeStyles.captionMedium, { color: colors.accent, marginTop: space[1] / 2 }]}>
+              Split · {lines.length} categories
             </Text>
-            <Text style={[typeStyles.bodyMedium, { color: colors.textSecondary, marginTop: space[1] / 2 }]}>
-              {d.category}
-            </Text>
+            {lines.map((l) => (
+              <Text
+                key={l.id}
+                style={[typeStyles.bodySmall, { color: colors.textSecondary, marginTop: space[1] / 4 }]}
+              >
+                {l.category}: {formatMoney(l.amount, settings.currency)}
+              </Text>
+            ))}
             <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
-              {d.date}
-              {d.tag ? ` · ${d.tag}` : ''}
+              {head.date}
+              {head.tag ? ` · ${head.tag}` : ''}
               {acc ? ` · ${acc}` : ''}
+              {hasReceipt ? ' · receipt' : ''}
             </Text>
-            {d.note ? (
+            {head.note ? (
               <Text style={[typeStyles.bodySmall, { color: colors.textMuted, marginTop: space[1] / 2 }]}>
-                {d.note}
+                {head.note}
               </Text>
             ) : null}
           </View>
@@ -178,12 +303,12 @@ export default function ActivityScreen() {
               onPress={() =>
                 void router.push({
                   pathname: '/edit-transaction',
-                  params: { id: String(d.id), kind: item.kind },
+                  params: { id: String(head.id), kind: 'expense' },
                 })
               }
               style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
               accessibilityRole="button"
-              accessibilityLabel={`Edit ${item.kind}, ${d.category}`}
+              accessibilityLabel="Edit split payment line"
             >
               <Ionicons name="pencil-outline" size={22} color={colors.accent} />
             </Pressable>
@@ -191,7 +316,7 @@ export default function ActivityScreen() {
               onPress={() => confirmDelete(item)}
               style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
               accessibilityRole="button"
-              accessibilityLabel={isExp ? `Delete expense, ${d.category}` : `Delete income, ${d.category}`}
+              accessibilityLabel="Delete split payment"
             >
               <Ionicons name="trash-outline" size={22} color={colors.danger} />
             </Pressable>
@@ -202,7 +327,12 @@ export default function ActivityScreen() {
     [colors, settings.currency, confirmDelete, accountNameById]
   );
 
-  const keyExtractor = useCallback((item: Row) => `${item.kind}-${item.data.id}`, []);
+  const keyExtractor = useCallback((item: ActivityUnifiedRow) => {
+    if (item.kind === 'income') return `i-${item.income.id}`;
+    if (item.expenseRow.shape === 'single') return `e-${item.expenseRow.expense.id}`;
+    const g = item.expenseRow.expenses[0]?.splitGroupId ?? 'g';
+    return `s-${g}`;
+  }, []);
 
   if (!ready) {
     return (

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFinance } from '../src/context/FinanceContext';
 import { parseAmount, todayISODate } from '../src/lib/money';
+import type { Expense } from '../src/types/expense';
 
 export default function EditTransactionScreen() {
   const { id: idStr, kind: kindStr } = useLocalSearchParams<{ id: string; kind: string }>();
@@ -74,7 +75,7 @@ export default function EditTransactionScreen() {
     }
     setSaving(true);
     try {
-      const payload = {
+      const base = {
         amount: value,
         category,
         tag: tag.trim() || null,
@@ -82,8 +83,14 @@ export default function EditTransactionScreen() {
         date: date.trim(),
         accountId,
       };
-      if (kind === 'expense') await updateExpense(id, payload);
-      else await updateIncome(id, payload);
+      if (kind === 'expense') {
+        const e = row as Expense;
+        await updateExpense(id, {
+          ...base,
+          splitGroupId: e.splitGroupId ?? null,
+          receiptUri: e.receiptUri ?? null,
+        });
+      } else await updateIncome(id, base);
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {

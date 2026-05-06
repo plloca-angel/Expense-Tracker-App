@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
@@ -6,11 +7,14 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +24,7 @@ import { useTabHeaderSubtitle } from '../../src/hooks/useTabHeaderSubtitle';
 import { hapticLight } from '../../src/lib/haptics';
 import {
   byCategory,
+  dailyTotalsInRangeTail,
   lastNDaysByDay,
   totalIncome,
   totalSpent,
@@ -29,19 +34,68 @@ import {
   spendChangeVsPreviousMonth,
   topCategoryShare,
 } from '../../src/lib/insights';
-import { formatMoney } from '../../src/lib/money';
-import { currentMonthPrefix, expensesInMonth, filterByPeriod, type PeriodFilter } from '../../src/lib/period';
+import {
+  formatISODateMedium,
+  formatMoney,
+  parseISODateLocal,
+  todayISODate,
+  toISODateString,
+} from '../../src/lib/money';
+import {
+  addCalendarDaysISO,
+  currentMonthPrefix,
+  expensesInMonth,
+  filterByPeriod,
+  type PeriodFilter,
+} from '../../src/lib/period';
 import { radii, space, surfaceCard, type as typeStyles } from '../../src/theme/tokens';
 
 const screenW = Dimensions.get('window').width;
 
 export default function OverviewScreen() {
-  const { ready, colors, settings, expenses, incomes, budgets, goals, refresh } = useFinance();
+  const { ready, colors, settings, expenses, incomes, budgets, goals, recurringItems, refresh, isDark } = useFinance();
   const [period, setPeriod] = useState<PeriodFilter>('month');
   const [refreshing, setRefreshing] = useState(false);
+  const [customFrom, setCustomFrom] = useState(() => addCalendarDaysISO(todayISODate(), -29));
+  const [customTo, setCustomTo] = useState(() => todayISODate());
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
 
-  const headerSubtitle =
-    period === 'month' ? 'This month' : period === '30d' ? 'Last 30 days' : 'All time';
+  const applyPickedDate = useCallback((target: 'from' | 'to', date: Date) => {
+    const iso = toISODateString(date);
+    if (target === 'from') setCustomFrom(iso);
+    else setCustomTo(iso);
+  }, []);
+
+  const openDatePicker = useCallback((target: 'from' | 'to') => {
+    void hapticLight();
+    setPickerTarget(target);
+  }, []);
+
+  const onAndroidDateChange = useCallback(
+    (target: 'from' | 'to', event: DateTimePickerEvent, date?: Date) => {
+      setPickerTarget(null);
+      if (event.type !== 'set' || !date) return;
+      applyPickedDate(target, date);
+    },
+    [applyPickedDate]
+  );
+
+  const customRange = useMemo(() => {
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    if (!re.test(customFrom.trim()) || !re.test(customTo.trim())) return null;
+    const a = customFrom.trim();
+    const b = customTo.trim();
+    return a <= b ? { start: a, end: b } : { start: b, end: a };
+  }, [customFrom, customTo]);
+
+  const headerSubtitle = useMemo(() => {
+    if (period === 'month') return 'This month';
+    if (period === '30d') return 'Last 30 days';
+    if (period === 'all') return 'All time';
+    if (!customRange) return 'Custom dates';
+    return `${customRange.start} → ${customRange.end}`;
+  }, [period, customRange]);
+
   useTabHeaderSubtitle('Overview', headerSubtitle, colors);
 
   const onRefresh = useCallback(async () => {
@@ -53,8 +107,15 @@ export default function OverviewScreen() {
     }
   }, [refresh]);
 
-  const fExpenses = useMemo(() => filterByPeriod(expenses, period), [expenses, period]);
-  const fIncomes = useMemo(() => filterByPeriod(incomes, period), [incomes, period]);
+  const rangeForFilter = period === 'custom' ? customRange : null;
+  const fExpenses = useMemo(
+    () => filterByPeriod(expenses, period, rangeForFilter),
+    [expenses, period, rangeForFilter]
+  );
+  const fIncomes = useMemo(
+    () => filterByPeriod(incomes, period, rangeForFilter),
+    [incomes, period, rangeForFilter]
+  );
 
   const spent = totalSpent(fExpenses);
   const earned = totalIncome(fIncomes);
@@ -68,9 +129,18 @@ export default function OverviewScreen() {
     color: CATEGORY_CHART_COLORS[i % CATEGORY_CHART_COLORS.length],
   }));
 
-  const last7 = lastNDaysByDay(fExpenses, 7);
-  const barMax = Math.max(1, ...last7.map((d) => d.total));
-  const barData = last7.map((d, i) => ({
+  const barSeries = useMemo(() => {
+    if (period === 'custom' && customRange) {
+      return dailyTotalsInRangeTail(fExpenses, customRange.start, customRange.end, 7);
+    }
+    return lastNDaysByDay(fExpenses, 7);
+  }, [period, customRange, fExpenses]);
+
+  const barChartTitle =
+    period === 'custom' && customRange ? 'Spending · recent days in range' : 'Spending · last 7 days';
+
+  const barMax = Math.max(1, ...barSeries.map((d) => d.total));
+  const barData = barSeries.map((d, i) => ({
     value: d.total,
     label: d.label,
     frontColor: CATEGORY_CHART_COLORS[i % CATEGORY_CHART_COLORS.length],
@@ -87,9 +157,14 @@ export default function OverviewScreen() {
 
   const chartWidth = Math.min(screenW - 40, 360);
 
-  const avgDaily = averageDailySpend(expenses, period);
-  const topShare = topCategoryShare(expenses, period);
+  const avgDaily = averageDailySpend(expenses, period, rangeForFilter);
+  const topShare = topCategoryShare(expenses, period, rangeForFilter);
   const vsPrev = period === 'month' ? spendChangeVsPreviousMonth(expenses, ym) : null;
+
+  const dueRecurring = useMemo(
+    () => recurringItems.filter((r) => r.active && r.lastPostedYm !== ym),
+    [recurringItems, ym]
+  );
 
   if (!ready) {
     return (
@@ -117,6 +192,7 @@ export default function OverviewScreen() {
               ['month', 'This month'],
               ['30d', '30 days'],
               ['all', 'All time'],
+              ['custom', 'Custom'],
             ] as const
           ).map(([key, label]) => {
             const active = period === key;
@@ -147,6 +223,101 @@ export default function OverviewScreen() {
             );
           })}
         </View>
+
+        {period === 'custom' ? (
+          <View style={[styles.card, surfaceCard(colors, true), styles.customRangeCard]}>
+            <Text style={[typeStyles.captionMedium, { color: colors.textSecondary }]}>Date range</Text>
+            <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: 2, marginBottom: space[1] + 2 }]}>
+              {Platform.OS === 'web'
+                ? 'Enter dates as YYYY-MM-DD. Totals update when both are valid.'
+                : 'Tap a date to open the calendar.'}
+            </Text>
+            {Platform.OS === 'web' ? (
+              <View style={styles.customRangeRow}>
+                <View style={styles.customRangeField}>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>From</Text>
+                  <TextInput
+                    value={customFrom}
+                    onChangeText={setCustomFrom}
+                    placeholder="2026-01-01"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="numbers-and-punctuation"
+                    style={[
+                      styles.dateInput,
+                      { color: colors.text, borderColor: colors.border, backgroundColor: colors.card },
+                    ]}
+                  />
+                </View>
+                <View style={styles.customRangeField}>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>To</Text>
+                  <TextInput
+                    value={customTo}
+                    onChangeText={setCustomTo}
+                    placeholder="2026-01-31"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="numbers-and-punctuation"
+                    style={[
+                      styles.dateInput,
+                      { color: colors.text, borderColor: colors.border, backgroundColor: colors.card },
+                    ]}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.customRangeRow}>
+                <View style={styles.customRangeField}>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>From</Text>
+                  <Pressable
+                    onPress={() => openDatePicker('from')}
+                    accessibilityRole="button"
+                    accessibilityLabel={`From date, ${formatISODateMedium(customFrom)}`}
+                    style={({ pressed }) => [
+                      styles.datePickerTrigger,
+                      { borderColor: colors.border, backgroundColor: colors.card },
+                      pressed && { opacity: 0.85 },
+                    ]}
+                  >
+                    <View style={styles.datePickerTriggerRow}>
+                      <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>
+                        {formatISODateMedium(customFrom)}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                    </View>
+                  </Pressable>
+                </View>
+                <View style={styles.customRangeField}>
+                  <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: 4 }]}>To</Text>
+                  <Pressable
+                    onPress={() => openDatePicker('to')}
+                    accessibilityRole="button"
+                    accessibilityLabel={`To date, ${formatISODateMedium(customTo)}`}
+                    style={({ pressed }) => [
+                      styles.datePickerTrigger,
+                      { borderColor: colors.border, backgroundColor: colors.card },
+                      pressed && { opacity: 0.85 },
+                    ]}
+                  >
+                    <View style={styles.datePickerTriggerRow}>
+                      <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>
+                        {formatISODateMedium(customTo)}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                    </View>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+            {!customRange ? (
+              <Text style={[typeStyles.caption, { color: colors.expense, marginTop: space[1] }]}>
+                {Platform.OS === 'web' ? 'Enter two valid dates to load this period.' : 'Choose both dates to load this period.'}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <Pressable
           onPress={() => router.push('/analytics')}
@@ -199,10 +370,62 @@ export default function OverviewScreen() {
           </Text>
         </LinearGradient>
 
+        <Pressable
+          onPress={() => router.push('/month-snapshot')}
+          style={[
+            styles.analyticsCta,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open month snapshot"
+        >
+          <Ionicons name="share-outline" size={22} color={colors.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.analyticsTitle, { color: colors.text }]}>Month snapshot</Text>
+            <Text style={[styles.analyticsSub, { color: colors.textSecondary }]}>
+              Net, top categories, vs last month — share as text
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </Pressable>
+
+        {dueRecurring.length > 0 ? (
+          <View style={[styles.card, surfaceCard(colors, true)]}>
+            <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Recurring · {ym}</Text>
+            <Text style={[typeStyles.caption, { color: colors.textMuted, marginBottom: space[1] + 2 }]}>
+              Expected this month but not posted yet. Use Plans to post recurring items.
+            </Text>
+            {dueRecurring.slice(0, 5).map((r) => (
+              <View key={r.id} style={[styles.dueRow, { borderColor: colors.border }]}>
+                <Text style={[typeStyles.bodyMedium, { color: colors.text }]}>
+                  {r.kind === 'expense' ? '−' : '+'}
+                  {formatMoney(r.amount, settings.currency)} · {r.title || r.category}
+                </Text>
+                <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] / 4 }]}>
+                  Day {r.dayOfMonth} · {r.category}
+                </Text>
+              </View>
+            ))}
+            {dueRecurring.length > 5 ? (
+              <Text style={[typeStyles.caption, { color: colors.textMuted, marginTop: space[1] }]}>
+                +{dueRecurring.length - 5} more in Plans
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={[styles.card, surfaceCard(colors, true)]}>
           <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Insights</Text>
           <Text style={[typeStyles.bodySmall, styles.insightLine, { color: colors.textSecondary }]}>
-            Avg spend / day ({period === 'month' ? 'this month' : period === '30d' ? 'last 30 days' : 'all time'}):{' '}
+            Avg spend / day (
+            {period === 'month'
+              ? 'this month'
+              : period === '30d'
+                ? 'last 30 days'
+                : period === 'custom'
+                  ? 'selected dates'
+                  : 'all time'}
+            ):{' '}
             <Text style={{ fontWeight: '700', color: colors.text }}>{formatMoney(avgDaily, settings.currency)}</Text>
           </Text>
           {topShare ? (
@@ -339,7 +562,7 @@ export default function OverviewScreen() {
         </View>
 
         <View style={[styles.card, surfaceCard(colors, true)]}>
-          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>Spending · last 7 days</Text>
+          <Text style={[typeStyles.title, styles.cardTitle, { color: colors.text }]}>{barChartTitle}</Text>
           {fExpenses.length === 0 ? (
             <Text style={[typeStyles.body, styles.empty, { color: colors.textMuted }]}>No data in this period.</Text>
           ) : (
@@ -363,6 +586,41 @@ export default function OverviewScreen() {
           )}
         </View>
       </ScrollView>
+
+      {pickerTarget && Platform.OS === 'ios' ? (
+        <Modal animationType="slide" transparent visible onRequestClose={() => setPickerTarget(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setPickerTarget(null)}>
+            <Pressable
+              style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.modalToolbar, { borderBottomColor: colors.border }]}>
+                <Pressable onPress={() => setPickerTarget(null)} hitSlop={12} accessibilityRole="button">
+                  <Text style={[typeStyles.bodyMedium, { color: colors.accent, fontWeight: '600' }]}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={parseISODateLocal(pickerTarget === 'from' ? customFrom : customTo)}
+                mode="date"
+                display="spinner"
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(_, date) => {
+                  if (date && pickerTarget) applyPickedDate(pickerTarget, date);
+                }}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {pickerTarget && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={parseISODateLocal(pickerTarget === 'from' ? customFrom : customTo)}
+          mode="date"
+          display="default"
+          onChange={(event, date) => pickerTarget && onAndroidDateChange(pickerTarget, event, date)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -373,6 +631,47 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: space[1] + 4 },
   periodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
+  customRangeCard: { marginBottom: space[2] },
+  customRangeRow: { flexDirection: 'row', gap: space[2] },
+  customRangeField: { flex: 1 },
+  datePickerTrigger: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2],
+    paddingVertical: space[1] + 2,
+  },
+  datePickerTriggerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[1],
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: space[2],
+    paddingVertical: space[1] + 2,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: space[2],
+  },
+  modalToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: space[3],
+    paddingVertical: space[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   periodChip: {
     paddingHorizontal: space[2] - 2,
     paddingVertical: space[1],
@@ -387,6 +686,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     marginBottom: space[2],
+  },
+  dueRow: {
+    paddingVertical: space[1] + 2,
+    marginBottom: space[1],
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   analyticsTitle: { fontSize: 16, fontWeight: '700' },
   analyticsSub: { fontSize: 13, marginTop: 2 },

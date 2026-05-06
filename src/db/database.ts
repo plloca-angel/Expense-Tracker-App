@@ -12,6 +12,10 @@ import type { RecurringItem } from '../types/recurring';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
+function newSplitGroupId(): string {
+  return `sg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   let v = row?.user_version ?? 0;
@@ -99,6 +103,12 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     `);
     await db.execAsync('PRAGMA user_version = 4');
   }
+
+  if (v < 5) {
+    await db.execAsync('ALTER TABLE expenses ADD COLUMN split_group_id TEXT;');
+    await db.execAsync('ALTER TABLE expenses ADD COLUMN receipt_uri TEXT;');
+    await db.execAsync('PRAGMA user_version = 5');
+  }
 }
 
 export async function openDb(): Promise<SQLite.SQLiteDatabase> {
@@ -130,6 +140,8 @@ type ExpenseRow = {
   date: string;
   created_at: string;
   account_id: number | null;
+  split_group_id: string | null;
+  receipt_uri: string | null;
 };
 
 function mapExpenseRow(r: ExpenseRow): Expense {
@@ -142,12 +154,14 @@ function mapExpenseRow(r: ExpenseRow): Expense {
     date: r.date,
     createdAt: r.created_at,
     accountId: r.account_id ?? null,
+    splitGroupId: r.split_group_id,
+    receiptUri: r.receipt_uri,
   };
 }
 
 export async function fetchAllExpenses(db: SQLite.SQLiteDatabase): Promise<Expense[]> {
   const rows = await db.getAllAsync<ExpenseRow>(
-    'SELECT id, amount, category, tag, note, date, created_at, account_id FROM expenses ORDER BY date DESC, id DESC'
+    'SELECT id, amount, category, tag, note, date, created_at, account_id, split_group_id, receipt_uri FROM expenses ORDER BY date DESC, id DESC'
   );
   return rows.map(mapExpenseRow);
 }
@@ -159,40 +173,99 @@ export type NewExpenseInput = {
   note?: string | null;
   date: string;
   accountId?: number | null;
+  splitGroupId?: string | null;
+  receiptUri?: string | null;
 };
 
 export async function insertExpense(db: SQLite.SQLiteDatabase, input: NewExpenseInput): Promise<void> {
   const created = new Date().toISOString();
   await db.runAsync(
-    'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id, split_group_id, receipt_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     input.amount,
     input.category,
     input.tag ?? null,
     input.note ?? null,
     input.date,
     created,
-    input.accountId ?? null
+    input.accountId ?? null,
+    input.splitGroupId ?? null,
+    input.receiptUri ?? null
   );
 }
 
 export async function updateExpense(db: SQLite.SQLiteDatabase, id: number, input: NewExpenseInput): Promise<void> {
   await db.runAsync(
-    'UPDATE expenses SET amount = ?, category = ?, tag = ?, note = ?, date = ?, account_id = ? WHERE id = ?',
+    'UPDATE expenses SET amount = ?, category = ?, tag = ?, note = ?, date = ?, account_id = ?, split_group_id = ?, receipt_uri = ? WHERE id = ?',
     input.amount,
     input.category,
     input.tag ?? null,
     input.note ?? null,
     input.date,
     input.accountId ?? null,
+    input.splitGroupId ?? null,
+    input.receiptUri ?? null,
     id
   );
 }
 
-export async function deleteExpense(db: SQLite.SQLiteDatabase, id: number): Promise<void> {
-  await db.runAsync('DELETE FROM expenses WHERE id = ?', id);
+export type SplitLineInput = { amount: number; category: string };
+
+export type NewSplitExpenseInput = {
+  lines: SplitLineInput[];
+  tag?: string | null;
+  note?: string | null;
+  date: string;
+  accountId?: number | null;
+  receiptUri?: string | null;
+};
+
+export async function insertSplitExpense(db: SQLite.SQLiteDatabase, input: NewSplitExpenseInput): Promise<void> {
+  if (input.lines.length < 2) throw new Error('Split requires at least two lines');
+  const created = new Date().toISOString();
+  const groupId = newSplitGroupId();
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < input.lines.length; i++) {
+      const line = input.lines[i]!;
+      await db.runAsync(
+        'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id, split_group_id, receipt_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        line.amount,
+        line.category,
+        input.tag ?? null,
+        input.note ?? null,
+        input.date,
+        created,
+        input.accountId ?? null,
+        groupId,
+        i === 0 ? (input.receiptUri ?? null) : null
+      );
+    }
+  });
 }
 
-function mapIncomeRow(r: ExpenseRow): Income {
+export async function deleteExpense(db: SQLite.SQLiteDatabase, id: number): Promise<void> {
+  const row = await db.getFirstAsync<{ split_group_id: string | null }>(
+    'SELECT split_group_id FROM expenses WHERE id = ?',
+    id
+  );
+  if (row?.split_group_id) {
+    await db.runAsync('DELETE FROM expenses WHERE split_group_id = ?', row.split_group_id);
+  } else {
+    await db.runAsync('DELETE FROM expenses WHERE id = ?', id);
+  }
+}
+
+type IncomeRow = {
+  id: number;
+  amount: number;
+  category: string;
+  tag: string | null;
+  note: string | null;
+  date: string;
+  created_at: string;
+  account_id: number | null;
+};
+
+function mapIncomeRow(r: IncomeRow): Income {
   return {
     id: r.id,
     amount: r.amount,
@@ -206,7 +279,7 @@ function mapIncomeRow(r: ExpenseRow): Income {
 }
 
 export async function fetchAllIncomes(db: SQLite.SQLiteDatabase): Promise<Income[]> {
-  const rows = await db.getAllAsync<ExpenseRow>(
+  const rows = await db.getAllAsync<IncomeRow>(
     'SELECT id, amount, category, tag, note, date, created_at, account_id FROM incomes ORDER BY date DESC, id DESC'
   );
   return rows.map(mapIncomeRow);
@@ -566,6 +639,8 @@ export async function exportDatabaseSnapshot(db: SQLite.SQLiteDatabase): Promise
       date: e.date,
       createdAt: e.createdAt,
       accountName: e.accountId != null ? (idToName.get(e.accountId) ?? null) : null,
+      splitGroupId: e.splitGroupId ?? null,
+      receiptUri: e.receiptUri ?? null,
     })),
     incomes: incomes.map((i) => ({
       amount: i.amount,
@@ -653,14 +728,16 @@ export async function importDatabaseSnapshot(db: SQLite.SQLiteDatabase, data: Ba
     }
     for (const e of data.expenses) {
       await db.runAsync(
-        'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO expenses (amount, category, tag, note, date, created_at, account_id, split_group_id, receipt_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         e.amount,
         e.category,
         e.tag ?? null,
         e.note ?? null,
         e.date,
         e.createdAt,
-        resolveAid(e.accountName)
+        resolveAid(e.accountName),
+        e.splitGroupId ?? null,
+        e.receiptUri ?? null
       );
     }
     for (const i of data.incomes) {

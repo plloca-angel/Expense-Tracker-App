@@ -1,5 +1,5 @@
 import type { Expense } from '../types/expense';
-import { filterByPeriod, type PeriodFilter } from './period';
+import { filterByPeriod, inclusiveCalendarDays, type PeriodDateRange, type PeriodFilter } from './period';
 import { totalSpent } from './aggregates';
 
 export function uniqueDayCount(dates: string[]): number {
@@ -8,12 +8,18 @@ export function uniqueDayCount(dates: string[]): number {
 }
 
 /** Average daily spend over the period (rough: month = days elapsed this month; 30d = 30; all = unique expense days). */
-export function averageDailySpend(expenses: Expense[], period: PeriodFilter): number {
-  const filtered = filterByPeriod(expenses, period);
+export function averageDailySpend(
+  expenses: Expense[],
+  period: PeriodFilter,
+  customRange?: PeriodDateRange | null
+): number {
+  const filtered = filterByPeriod(expenses, period, customRange);
   if (filtered.length === 0) return 0;
   const total = totalSpent(filtered);
   let days: number;
-  if (period === '30d') {
+  if (period === 'custom' && customRange?.start && customRange?.end) {
+    days = inclusiveCalendarDays(customRange.start, customRange.end);
+  } else if (period === '30d') {
     days = 30;
   } else if (period === 'month') {
     const now = new Date();
@@ -51,8 +57,12 @@ export function spendChangeVsPreviousMonth(expenses: Expense[], currentYm: strin
   return { prevYm, current, previous, pctChange };
 }
 
-export function topCategoryShare(expenses: Expense[], period: PeriodFilter): { category: string; share: number } | null {
-  const filtered = filterByPeriod(expenses, period);
+export function topCategoryShare(
+  expenses: Expense[],
+  period: PeriodFilter,
+  customRange?: PeriodDateRange | null
+): { category: string; share: number } | null {
+  const filtered = filterByPeriod(expenses, period, customRange);
   const total = totalSpent(filtered);
   if (total <= 0) return null;
   const map = new Map<string, number>();

@@ -7,4 +7,6 @@ export type Expense = {
   date: string;
   createdAt: string;
   accountId: number | null;
+  splitGroupId: string | null;
+  receiptUri: string | null;
 };

@@ -14,6 +14,8 @@ export type ExpenseBackupRow = {
   date: string;
   createdAt: string;
   accountName?: string | null;
+  splitGroupId?: string | null;
+  receiptUri?: string | null;
 };
 
 export type IncomeBackupRow = {
@@ -73,6 +75,8 @@ function mapV2Expense(e: Record<string, unknown>): ExpenseBackupRow {
     date: String(e.date),
     createdAt: String(e.createdAt),
     accountName: null,
+    splitGroupId: null,
+    receiptUri: null,
   };
 }
 
@@ -123,6 +127,8 @@ export function parseBackupJson(raw: string): BackupPayload {
     expenses: (o.expenses as ExpenseBackupRow[]).map((e) => ({
       ...e,
       accountName: e.accountName ?? null,
+      splitGroupId: e.splitGroupId ?? null,
+      receiptUri: e.receiptUri ?? null,
     })),
     incomes: (o.incomes as IncomeBackupRow[]).map((i) => ({
       ...i,
@@ -146,11 +152,16 @@ export type BackupImportSummary = {
   savingsGoals: number;
   accounts: number;
   recurringItems: number;
+  splitPayments: number;
 };
 
 /** Counts per table for import preview (dry run). */
 export function summarizeBackupPayload(data: BackupPayload): BackupImportSummary {
   const accountCount = data.accounts.length > 0 ? data.accounts.length : DEFAULT_ACCOUNTS.length;
+  const splitIds = new Set<string>();
+  for (const e of data.expenses) {
+    if (e.splitGroupId) splitIds.add(e.splitGroupId);
+  }
   return {
     version: data.version,
     exportedAt: data.exportedAt,
@@ -161,6 +172,7 @@ export function summarizeBackupPayload(data: BackupPayload): BackupImportSummary
     savingsGoals: data.savingsGoals.length,
     accounts: accountCount,
     recurringItems: data.recurringItems.length,
+    splitPayments: splitIds.size,
   };
 }
 
@@ -169,14 +181,14 @@ export function formatBackupImportPreview(summary: BackupImportSummary): string 
     `Backup from ${summary.exportedAt} (format v${summary.version})`,
     '',
     'This will replace your data with:',
-    `• Expenses: ${summary.expenses}`,
-    `• Income: ${summary.incomes}`,
-    `• Budgets: ${summary.budgets}`,
-    `• Savings goals: ${summary.savingsGoals}`,
-    `• Custom categories: ${summary.customCategories}`,
-    `• Accounts: ${summary.accounts} (default list if backup has none)`,
-    `• Recurring / bills: ${summary.recurringItems}`,
-    '• App settings: replaced',
+    `- Expenses: ${summary.expenses} (${summary.splitPayments} split payments)`,
+    `- Income: ${summary.incomes}`,
+    `- Budgets: ${summary.budgets}`,
+    `- Savings goals: ${summary.savingsGoals}`,
+    `- Custom categories: ${summary.customCategories}`,
+    `- Accounts: ${summary.accounts} (default list if backup has none)`,
+    `- Recurring / bills: ${summary.recurringItems}`,
+    '- App settings: replaced',
     '',
     'Current data cannot be recovered after import unless you exported a backup first.',
   ];
